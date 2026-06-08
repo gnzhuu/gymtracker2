@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <title>Gym Tracker v13</title>
+  <title>Gym Tracker v15</title>
   <style>
     :root {
       --bg: #070a12;
@@ -396,8 +396,10 @@
           <button id="settingsUpdateAppBtn" class="btn" type="button">Actualizar app</button>
           <button id="settingsSyncBtn" class="btn secondary" type="button">Sincronizar ahora</button>
           <button id="settingsTokenBtn" class="btn secondary" type="button">Cambiar contraseña</button>
+          <button id="settingsRefreshBtn" class="btn secondary" type="button">Recargar datos de Sheets</button>
+          <button id="settingsRepairBtn" class="btn danger" type="button">Reparar datos locales</button>
         </div>
-        <p class="hint" style="margin-top:10px">Actualizar app borra la caché de GitHub Pages y recarga la última versión. No borra entrenamientos, ejercicios ni contraseña.</p>
+        <p class="hint" style="margin-top:10px">Actualizar app borra la caché de GitHub Pages y recarga la última versión. Recargar datos de Sheets reconstruye el histórico local desde la hoja. Reparar datos locales limpia históricos atascados y vuelve a traer lo que haya en Sheets; mantiene la contraseña.</p>
       </div>
 
       <div class="card soft">
@@ -437,7 +439,7 @@
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
-    const APP_VERSION = 'v13';
+    const APP_VERSION = 'v15';
 
     const DEFAULT_EXERCISES = {
       'Pecho': ['Press banca', 'Press inclinado mancuerna', 'Aperturas', 'Fondos'],
@@ -458,7 +460,8 @@
       setupSkipped: 'gymtracker_setup_skipped_v1',
       dayNames: 'gymtracker_day_names_v1',
       pendingDayNames: 'gymtracker_pending_day_names_v1',
-      pendingDeletes: 'gymtracker_pending_deletes_v1'
+      pendingDeletes: 'gymtracker_pending_deletes_v1',
+      deletedDays: 'gymtracker_deleted_days_v1'
     };
 
     const OLD_LS = {
@@ -482,6 +485,7 @@
       dayNames: loadJsonWithMigration(LS.dayNames, null, {}),
       pendingDayNames: loadJsonWithMigration(LS.pendingDayNames, null, []),
       pendingDeletes: loadJsonWithMigration(LS.pendingDeletes, null, []),
+      deletedDays: loadJsonWithMigration(LS.deletedDays, null, []),
       apiToken: localStorage.getItem(LS.apiToken) || '',
       draft: null,
       syncing: false
@@ -541,6 +545,8 @@
       $('settingsUpdateAppBtn').addEventListener('click', updateApp);
       $('settingsSyncBtn').addEventListener('click', () => syncPending(true));
       $('settingsTokenBtn').addEventListener('click', openSetupModal);
+      $('settingsRefreshBtn').addEventListener('click', forceReloadFromServer);
+      $('settingsRepairBtn').addEventListener('click', repairLocalData);
       $('saveApiTokenBtn').addEventListener('click', saveApiTokenFromModal);
       $('skipApiTokenBtn').addEventListener('click', () => {
         localStorage.setItem(LS.setupSkipped, '1');
@@ -565,7 +571,7 @@
         .then(data => {
           if (data && data.ok) {
             mergeExercises(data.exercises || {});
-            mergeServerLogs(data.history || []);
+            replaceSyncedLogsFromServer(data.history || []);
             mergeDayNames(data.dayNames || {});
             saveLocal();
             renderAll();
@@ -579,19 +585,33 @@
     }
 
     function refreshHistoryFromServer() {
+      return forceReloadFromServer(false);
+    }
+
+    function forceReloadFromServer(showToast = true) {
       if (!hasServer() || !hasApiToken() || !navigator.onLine) {
         toast(!hasApiToken() ? 'Falta contraseña' : 'Sin conexión o sin API');
-        return;
+        return Promise.resolve(false);
       }
-      callApi('history', { limit: 2000 })
-        .then(res => {
-          const rows = Array.isArray(res) ? res : (res.history || []);
-          mergeServerLogs(rows || []);
-          saveLocal();
-          renderAll();
-          toast('Histórico actualizado');
+      if (showToast) toast('Recargando desde Sheets…');
+      return callApi('bootstrap')
+        .then(data => {
+          if (data && data.ok) {
+            mergeExercises(data.exercises || {});
+            replaceSyncedLogsFromServer(data.history || []);
+            state.dayNames = data.dayNames || {};
+            saveLocal();
+            renderAll();
+            if (showToast) toast('Datos recargados');
+            return true;
+          }
+          throw new Error('Respuesta inválida');
         })
-        .catch(() => toast('No se pudo actualizar'));
+        .catch(err => {
+          console.warn(err);
+          toast('No se pudo recargar');
+          return false;
+        });
     }
 
     function showScreen(screen) {
@@ -844,10 +864,13 @@
     function syncDeletesSequential(items) {
       if (!items.length) return Promise.resolve();
       let chain = Promise.resolve();
-      unique(items.map(x => typeof x === 'string' ? x : x.date)).filter(Boolean).forEach(date => {
+      unique(items.map(x => normalizeDate(typeof x === 'string' ? x : x.date))).filter(Boolean).forEach(date => {
         chain = chain.then(() => callApi('deleteDay', { date })
           .then(() => {
-            state.pendingDeletes = state.pendingDeletes.filter(x => (typeof x === 'string' ? x : x.date) !== date);
+            // También limpiamos otra vez en local por si había fechas como Date/string distinto.
+            removeLocalDay(date);
+            state.pendingDeletes = state.pendingDeletes.filter(x => normalizeDate(typeof x === 'string' ? x : x.date) !== date);
+            state.deletedDays = state.deletedDays.filter(x => normalizeDate(x.date || x) !== date);
           })
         );
       });
@@ -1296,21 +1319,31 @@
     }
 
     function deleteWorkoutDay(date) {
-      const rows = state.logs.filter(x => x.fecha === date);
-      if (!rows.length) return;
+      date = normalizeDate(date);
+      const rows = state.logs.filter(x => normalizeDate(x.fecha) === date);
       const name = getDayName(date);
+      if (!rows.length && !state.dayNames[date]) return;
       const ok = window.confirm(`¿Borrar ${rows.length} series de ${formatDateHuman(date)}${name !== 'Entrenamiento' ? ' (' + name + ')' : ''}?`);
       if (!ok) return;
-      state.logs = state.logs.filter(x => x.fecha !== date);
-      delete state.dayNames[date];
-      state.pendingDayNames = state.pendingDayNames.filter(x => x.date !== date);
-      if (!state.pendingDeletes.some(x => (typeof x === 'string' ? x : x.date) === date)) {
+
+      removeLocalDay(date);
+      if (!state.pendingDeletes.some(x => normalizeDate(typeof x === 'string' ? x : x.date) === date)) {
         state.pendingDeletes.push({ date, deletedAt: new Date().toISOString() });
+      }
+      if (!state.deletedDays.some(x => normalizeDate(x.date || x) === date)) {
+        state.deletedDays.push({ date, deletedAt: new Date().toISOString() });
       }
       saveLocal();
       renderAll();
-      toast('Día borrado');
-      syncPending();
+      toast('Día borrado en este dispositivo');
+      syncPending(true);
+    }
+
+    function removeLocalDay(date) {
+      date = normalizeDate(date);
+      state.logs = state.logs.filter(x => normalizeDate(x.fecha) !== date);
+      delete state.dayNames[date];
+      state.pendingDayNames = state.pendingDayNames.filter(x => normalizeDate(x.date) !== date);
     }
 
     function renderProgressControls() {
@@ -1413,18 +1446,30 @@
     }
 
     function mergeServerLogs(rows) {
-      const byId = new Map(state.logs.map(x => [String(x.id), x]));
-      (rows || []).forEach(row => {
-        if (!row.id) return;
-        const existing = byId.get(String(row.id));
-        if (existing) {
-          existing.syncStatus = 'synced';
-          existing.syncedAt = row.syncedAt || existing.syncedAt || '';
-        } else {
-          state.logs.push({ ...row, syncStatus: 'synced' });
-          byId.set(String(row.id), row);
-        }
+      replaceSyncedLogsFromServer(rows);
+    }
+
+    function replaceSyncedLogsFromServer(rows) {
+      const deletedDates = new Set([
+        ...state.pendingDeletes.map(x => normalizeDate(typeof x === 'string' ? x : x.date)),
+        ...state.deletedDays.map(x => normalizeDate(x.date || x))
+      ].filter(Boolean));
+
+      const serverRows = (rows || [])
+        .filter(row => row && row.id)
+        .map(row => ({ ...row, fecha: normalizeDate(row.fecha), syncStatus: 'synced' }))
+        .filter(row => !deletedDates.has(normalizeDate(row.fecha)));
+
+      const serverIds = new Set(serverRows.map(row => String(row.id)));
+      const pendingLocal = state.logs.filter(row => {
+        const status = String(row.syncStatus || 'synced');
+        if (status === 'synced') return false;
+        if (deletedDates.has(normalizeDate(row.fecha))) return false;
+        if (serverIds.has(String(row.id))) return false;
+        return true;
       });
+
+      state.logs = serverRows.concat(pendingLocal);
       state.logs.sort((a,b) => String(b.createdAt || b.fecha).localeCompare(String(a.createdAt || a.fecha)));
     }
 
@@ -1435,6 +1480,7 @@
       localStorage.setItem(LS.dayNames, JSON.stringify(state.dayNames));
       localStorage.setItem(LS.pendingDayNames, JSON.stringify(state.pendingDayNames));
       localStorage.setItem(LS.pendingDeletes, JSON.stringify(state.pendingDeletes));
+      localStorage.setItem(LS.deletedDays, JSON.stringify(state.deletedDays));
       localStorage.setItem(LS.selectedGroup, state.selectedGroup);
     }
 
@@ -1548,13 +1594,27 @@
       }, 450);
     }
 
+    async function repairLocalData() {
+      const ok = window.confirm('Esto limpiará el histórico local atascado y lo reconstruirá desde Google Sheets. Mantiene contraseña, ejercicios locales y pendientes. ¿Continuar?');
+      if (!ok) return;
+      toast('Reparando datos locales…');
+      // Dejamos las colas pendientes para no perder nada no sincronizado, pero limpiamos el histórico sincronizado.
+      state.logs = state.logs.filter(x => String(x.syncStatus || 'synced') !== 'synced');
+      state.dayNames = {};
+      saveLocal();
+      renderAll();
+      const loaded = await forceReloadFromServer(false);
+      if (loaded) toast('Datos locales reparados');
+      else toast('No se pudo reparar desde Sheets');
+    }
+
     function getGroups() {
       const keys = unique(GROUP_ORDER.concat(Object.keys(state.exercises || {})));
       return keys.filter(g => state.exercises[g]);
     }
 
     function getRowsForDate(date) {
-      return state.logs.filter(x => x.fecha === date).sort((a,b) => String(a.ejercicio).localeCompare(String(b.ejercicio)) || Number(a.serie) - Number(b.serie));
+      return state.logs.filter(x => normalizeDate(x.fecha) === normalizeDate(date)).sort((a,b) => String(a.ejercicio).localeCompare(String(b.ejercicio)) || Number(a.serie) - Number(b.serie));
     }
 
     function bestKgForExercise(exercise) {
@@ -1575,6 +1635,19 @@
       const safeOptions = options || [];
       select.innerHTML = safeOptions.map(x => `<option value="${escapeAttr(x)}">${escapeHtml(x)}</option>`).join('');
       if (selected && safeOptions.includes(selected)) select.value = selected;
+    }
+
+    function normalizeDate(value) {
+      if (!value) return '';
+      const s = String(value).trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+      const d = new Date(s);
+      if (!Number.isNaN(d.getTime())) {
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().slice(0, 10);
+      }
+      return s;
     }
 
     function todayISO() {
