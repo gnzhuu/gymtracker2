@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <title>Gym Tracker v11</title>
+  <title>Gym Tracker v12</title>
   <style>
     :root {
       --bg: #070a12;
@@ -39,7 +39,8 @@
        así que la quitamos para que no aparezca ningún marco superior raro. */
     body::before { display: none; }
     button, input, select, textarea { font: inherit; color-scheme: dark; }
-    button { cursor: pointer; }
+    button { cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+    .round-btn, .tab, .btn, .seg-btn, .sync-pill { touch-action: manipulation; }
 
     .app {
       min-height: 100dvh;
@@ -147,6 +148,10 @@
     details.day summary::-webkit-details-marker { display: none; }
     .day-body { padding: 0 13px 13px; display: grid; gap: 9px; }
     .day-exercise { border-top: 1px solid var(--line); padding-top: 11px; }
+    .day-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 4px; }
+    .day-title { display: grid; gap: 2px; min-width: 0; }
+    .day-title .name { font-size: 15px; font-weight: 950; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .day-title .date { color: var(--muted); font-size: 12px; font-weight: 800; }
 
     .chart-wrap { width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 19px; background: rgba(255,255,255,.04); padding: 8px; min-height: 260px; }
     svg { width: 100%; height: 240px; display: block; }
@@ -409,8 +414,8 @@
   </div>
 
   <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzZAoObxSIoS2zq3WtVS_BVWm7EHDJtccdHu4rYzrIxlhX0u11e9qw0ZYtSd8_jGLPo/exec';
-    const APP_VERSION = 'v10';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
+    const APP_VERSION = 'v12';
 
     const DEFAULT_EXERCISES = {
       'Pecho': ['Press banca', 'Press inclinado mancuerna', 'Aperturas', 'Fondos'],
@@ -428,7 +433,10 @@
       selectedGroup: 'gymtracker_selected_group_v3',
       globalDate: 'gymtracker_global_date_v3',
       apiToken: 'gymtracker_api_token_v1',
-      setupSkipped: 'gymtracker_setup_skipped_v1'
+      setupSkipped: 'gymtracker_setup_skipped_v1',
+      dayNames: 'gymtracker_day_names_v1',
+      pendingDayNames: 'gymtracker_pending_day_names_v1',
+      pendingDeletes: 'gymtracker_pending_deletes_v1'
     };
 
     const OLD_LS = {
@@ -449,6 +457,9 @@
       exercises: loadJsonWithMigration(LS.exercises, OLD_LS.exercises, DEFAULT_EXERCISES),
       logs: loadJsonWithMigration(LS.logs, OLD_LS.logs, []),
       pendingExercises: loadJsonWithMigration(LS.pendingExercises, OLD_LS.pendingExercises, []),
+      dayNames: loadJsonWithMigration(LS.dayNames, null, {}),
+      pendingDayNames: loadJsonWithMigration(LS.pendingDayNames, null, []),
+      pendingDeletes: loadJsonWithMigration(LS.pendingDeletes, null, []),
       apiToken: localStorage.getItem(LS.apiToken) || '',
       draft: null,
       syncing: false
@@ -505,6 +516,7 @@
       $('historyGroup').addEventListener('change', () => { renderHistoryExerciseFilter(); renderHistory(); });
       $('historyExercise').addEventListener('change', renderHistory);
       $('refreshHistoryBtn').addEventListener('click', refreshHistoryFromServer);
+      $('historyList').addEventListener('click', onHistoryClick);
 
       $('progressGroup').addEventListener('change', () => { renderProgressExerciseSelect(); renderChart(); });
       $('progressExercise').addEventListener('change', renderChart);
@@ -529,6 +541,8 @@
       document.querySelectorAll('.tab').forEach(btn => {
         btn.addEventListener('click', () => showScreen(btn.dataset.tab));
       });
+
+      preventFastTapZoom();
     }
 
     function loadFromServer() {
@@ -538,6 +552,7 @@
           if (data && data.ok) {
             mergeExercises(data.exercises || {});
             mergeServerLogs(data.history || []);
+            mergeDayNames(data.dayNames || {});
             saveLocal();
             renderAll();
             syncPending();
@@ -766,7 +781,9 @@
 
       const pendingLogs = state.logs.filter(x => x.syncStatus !== 'synced');
       const pendingExercises = [...state.pendingExercises];
-      if (!pendingLogs.length && !pendingExercises.length) {
+      const pendingDayNames = [...state.pendingDayNames];
+      const pendingDeletes = [...state.pendingDeletes];
+      if (!pendingLogs.length && !pendingExercises.length && !pendingDayNames.length && !pendingDeletes.length) {
         renderSyncStatus();
         if (manual) toast('Todo sincronizado');
         return;
@@ -775,7 +792,9 @@
       state.syncing = true;
       renderSyncStatus('Sincronizando…');
 
-      syncExercisesSequential(pendingExercises)
+      syncDeletesSequential(pendingDeletes)
+        .then(() => syncDayNamesSequential(pendingDayNames))
+        .then(() => syncExercisesSequential(pendingExercises))
         .then(() => syncLogs(pendingLogs))
         .then(result => {
           state.syncing = false;
@@ -791,6 +810,35 @@
           renderAll();
           if (manual) toast('Error al sincronizar');
         });
+    }
+
+
+    function syncDeletesSequential(items) {
+      if (!items.length) return Promise.resolve();
+      let chain = Promise.resolve();
+      unique(items.map(x => typeof x === 'string' ? x : x.date)).filter(Boolean).forEach(date => {
+        chain = chain.then(() => callApi('deleteDay', { date })
+          .then(() => {
+            state.pendingDeletes = state.pendingDeletes.filter(x => (typeof x === 'string' ? x : x.date) !== date);
+          })
+        );
+      });
+      return chain;
+    }
+
+    function syncDayNamesSequential(items) {
+      if (!items.length) return Promise.resolve();
+      let chain = Promise.resolve();
+      const latest = {};
+      items.forEach(item => { if (item && item.date) latest[item.date] = item.name || ''; });
+      Object.keys(latest).forEach(date => {
+        chain = chain.then(() => callApi('saveDayName', { date, name: latest[date] })
+          .then(() => {
+            state.pendingDayNames = state.pendingDayNames.filter(x => x.date !== date);
+          })
+        );
+      });
+      return chain;
     }
 
     function syncExercisesSequential(items) {
@@ -886,7 +934,7 @@
 
     function renderSyncStatus(customText) {
       const el = $('syncStatus');
-      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length;
+      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length + state.pendingDayNames.length + state.pendingDeletes.length;
       el.className = 'sync-pill';
       if (customText) {
         el.textContent = customText;
@@ -909,7 +957,7 @@
     function renderSettingsStatus() {
       const el = $('settingsStatus');
       if (!el) return;
-      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length;
+      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length + state.pendingDayNames.length + state.pendingDeletes.length;
       const netText = navigator.onLine ? 'Con internet' : 'Sin conexión';
       const tokenText = hasApiToken() ? 'Contraseña guardada' : 'Sin contraseña configurada';
       const pendingText = pending ? `${pending} pendiente${pending === 1 ? '' : 's'}` : 'Sin pendientes';
@@ -1110,8 +1158,15 @@
         const details = document.createElement('details');
         details.className = 'day';
         if (idx === 0) details.open = true;
-        details.innerHTML = `<summary><span>${formatDateHuman(date)}</span><span class="hint">${rows.length} series · ${compact(volume)} kg</span></summary>
-          <div class="day-body"><div class="hint">${escapeHtml(groups)}</div>${renderDayExercises(rows)}</div>`;
+        details.innerHTML = `<summary><span class="day-title"><span class="name">${escapeHtml(getDayName(date))}</span><span class="date">${formatDateHuman(date)}</span></span><span class="hint">${rows.length} series · ${compact(volume)} kg</span></summary>
+          <div class="day-body">
+            <div class="hint">${escapeHtml(groups)}</div>
+            <div class="day-actions">
+              <button class="btn secondary small" type="button" data-history-action="rename-day" data-date="${escapeAttr(date)}">Editar nombre</button>
+              <button class="btn danger small" type="button" data-history-action="delete-day" data-date="${escapeAttr(date)}">Borrar día</button>
+            </div>
+            ${renderDayExercises(rows)}
+          </div>`;
         list.appendChild(details);
       });
     }
@@ -1157,6 +1212,53 @@
           <div class="line2"><span>${escapeHtml(exRows[0].grupo)}</span><span>${exRows.length} series · ${compact(totalVol)} kg</span></div>${dateBlocks}`;
         list.appendChild(card);
       });
+    }
+
+
+    function onHistoryClick(event) {
+      const btn = event.target.closest('[data-history-action]');
+      if (!btn) return;
+      const date = btn.dataset.date;
+      if (!date) return;
+      if (btn.dataset.historyAction === 'rename-day') renameWorkoutDay(date);
+      if (btn.dataset.historyAction === 'delete-day') deleteWorkoutDay(date);
+    }
+
+    function getDayName(date) {
+      return (state.dayNames && state.dayNames[date]) ? state.dayNames[date] : 'Entrenamiento';
+    }
+
+    function renameWorkoutDay(date) {
+      const current = getDayName(date) === 'Entrenamiento' ? '' : getDayName(date);
+      const name = window.prompt('Nombre del entrenamiento', current);
+      if (name === null) return;
+      const clean = String(name).trim();
+      if (clean) state.dayNames[date] = clean;
+      else delete state.dayNames[date];
+      state.pendingDayNames = state.pendingDayNames.filter(x => x.date !== date);
+      state.pendingDayNames.push({ date, name: clean, updatedAt: new Date().toISOString() });
+      saveLocal();
+      renderAll();
+      toast(clean ? 'Nombre guardado' : 'Nombre quitado');
+      syncPending();
+    }
+
+    function deleteWorkoutDay(date) {
+      const rows = state.logs.filter(x => x.fecha === date);
+      if (!rows.length) return;
+      const name = getDayName(date);
+      const ok = window.confirm(`¿Borrar ${rows.length} series de ${formatDateHuman(date)}${name !== 'Entrenamiento' ? ' (' + name + ')' : ''}?`);
+      if (!ok) return;
+      state.logs = state.logs.filter(x => x.fecha !== date);
+      delete state.dayNames[date];
+      state.pendingDayNames = state.pendingDayNames.filter(x => x.date !== date);
+      if (!state.pendingDeletes.some(x => (typeof x === 'string' ? x : x.date) === date)) {
+        state.pendingDeletes.push({ date, deletedAt: new Date().toISOString() });
+      }
+      saveLocal();
+      renderAll();
+      toast('Día borrado');
+      syncPending();
     }
 
     function renderProgressControls() {
@@ -1242,6 +1344,13 @@
       });
     }
 
+    function mergeDayNames(dayNames) {
+      Object.keys(dayNames || {}).forEach(date => {
+        const name = String(dayNames[date] || '').trim();
+        if (name) state.dayNames[date] = name;
+      });
+    }
+
     function mergeExercises(serverExercises) {
       Object.keys(serverExercises || {}).forEach(group => {
         if (!state.exercises[group]) state.exercises[group] = [];
@@ -1271,6 +1380,9 @@
       localStorage.setItem(LS.exercises, JSON.stringify(state.exercises));
       localStorage.setItem(LS.logs, JSON.stringify(state.logs));
       localStorage.setItem(LS.pendingExercises, JSON.stringify(state.pendingExercises));
+      localStorage.setItem(LS.dayNames, JSON.stringify(state.dayNames));
+      localStorage.setItem(LS.pendingDayNames, JSON.stringify(state.pendingDayNames));
+      localStorage.setItem(LS.pendingDeletes, JSON.stringify(state.pendingDeletes));
       localStorage.setItem(LS.selectedGroup, state.selectedGroup);
     }
 
@@ -1322,6 +1434,18 @@
       toast('Contraseña guardada');
       loadFromServer();
       syncPending(true);
+    }
+
+
+    function preventFastTapZoom() {
+      let lastTouchEnd = 0;
+      document.addEventListener('touchend', (event) => {
+        const target = event.target.closest('button, .round-btn, .tab, .btn, .seg-btn');
+        if (!target) return;
+        const now = Date.now();
+        if (now - lastTouchEnd <= 320) event.preventDefault();
+        lastTouchEnd = now;
+      }, { passive: false });
     }
 
     function registerServiceWorker() {
