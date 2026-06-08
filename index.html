@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <title>Gon v19</title>
+  <title>Gon v20</title>
   <style>
     :root {
       --bg: #070a12;
@@ -180,6 +180,24 @@
     .choose-add { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
     .exercise-history-mini { display: grid; gap: 8px; }
     .compact-history-day { border: 1px solid var(--line); border-radius: 16px; padding: 10px; background: rgba(255,255,255,.04); }
+
+    .heatmap-card { overflow: hidden; }
+    .heatmap-nav { display: flex; align-items: center; gap: 8px; }
+    .heatmap-year { min-width: 54px; text-align: center; font-weight: 950; letter-spacing: -.03em; }
+    .heatmap-arrow { width: 34px; height: 34px; border-radius: 13px; border: 1px solid var(--line); background: rgba(255,255,255,.07); color: var(--text); font-size: 20px; font-weight: 950; display: grid; place-items: center; }
+    .heatmap-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 3px 0 2px; }
+    .heatmap-scroll::-webkit-scrollbar { display: none; }
+    .heatmap-months { min-width: 690px; display: grid; grid-template-columns: repeat(12, 1fr); gap: 0; color: var(--muted); font-size: 10px; font-weight: 900; margin: 8px 0 6px; padding-left: 1px; }
+    .heatmap-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 10px); grid-auto-columns: 10px; gap: 3px; width: max-content; min-width: 690px; }
+    .heat-dot { width: 10px; height: 10px; border-radius: 3px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.045); }
+    .heat-dot.blank { visibility: hidden; }
+    .heat-dot.l1 { background: rgba(125,211,252,.38); border-color: rgba(125,211,252,.10); }
+    .heat-dot.l2 { background: rgba(125,211,252,.58); border-color: rgba(125,211,252,.18); }
+    .heat-dot.l3 { background: rgba(52,211,153,.72); border-color: rgba(52,211,153,.20); }
+    .heat-dot.l4 { background: rgba(52,211,153,.95); border-color: rgba(52,211,153,.28); }
+    .heat-legend { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }
+    .heat-legend-dots { display: flex; align-items: center; gap: 4px; }
+
     /* iPhone 14 Pro ronda los 390 px de ancho CSS, pero dentro de tarjetas
        el ancho útil baja mucho. Mantener kg/reps en dos columnas provocaba
        que el botón + de reps se saliera. Solo usamos dos columnas en pantallas
@@ -326,6 +344,29 @@
         </div>
       </div>
 
+      <div class="card soft heatmap-card">
+        <div class="section-title">
+          <h2>Constancia</h2>
+          <div class="heatmap-nav">
+            <button id="heatPrevYear" class="heatmap-arrow" type="button">‹</button>
+            <span id="heatYear" class="heatmap-year"></span>
+            <button id="heatNextYear" class="heatmap-arrow" type="button">›</button>
+          </div>
+        </div>
+        <div class="line2"><span id="heatStats">0 días entrenados</span><span>desliza</span></div>
+        <div class="heatmap-scroll" aria-label="Calendario de entrenamientos">
+          <div id="heatMonths" class="heatmap-months"></div>
+          <div id="heatGrid" class="heatmap-grid"></div>
+        </div>
+        <div class="heat-legend">
+          <span class="hint">Menos</span>
+          <div class="heat-legend-dots">
+            <span class="heat-dot"></span><span class="heat-dot l1"></span><span class="heat-dot l2"></span><span class="heat-dot l3"></span><span class="heat-dot l4"></span>
+          </div>
+          <span class="hint">Más</span>
+        </div>
+      </div>
+
       <div id="historyFilters" class="card" style="display:none">
         <div class="grid two">
           <label>Grupo
@@ -447,7 +488,7 @@
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
-    const APP_VERSION = 'v19';
+    const APP_VERSION = 'v20';
 
     const DEFAULT_EXERCISES = {
       'Pecho': ['Press banca', 'Press inclinado mancuerna', 'Aperturas', 'Fondos'],
@@ -490,6 +531,7 @@
       selectedGroup: localStorage.getItem(LS.selectedGroup) || localStorage.getItem(OLD_LS.selectedGroup) || 'Pecho',
       selectedExercise: '',
       historyMode: 'days',
+      heatmapYear: Number(todayISO().slice(0, 4)),
       exercises: loadJsonWithMigration(LS.exercises, OLD_LS.exercises, DEFAULT_EXERCISES),
       logs: loadJsonWithMigration(LS.logs, OLD_LS.logs, []),
       pendingExercises: loadJsonWithMigration(LS.pendingExercises, OLD_LS.pendingExercises, []),
@@ -558,6 +600,8 @@
       $('historyModeGroup').addEventListener('click', () => setHistoryMode('group'));
       $('historyGroup').addEventListener('change', () => { renderHistoryExerciseFilter(); renderHistory(); });
       $('historyExercise').addEventListener('change', renderHistory);
+      $('heatPrevYear').addEventListener('click', () => { state.heatmapYear -= 1; renderTrainingHeatmap(); });
+      $('heatNextYear').addEventListener('click', () => { state.heatmapYear += 1; renderTrainingHeatmap(); });
       $('refreshHistoryBtn').addEventListener('click', refreshHistoryFromServer);
       $('historyList').addEventListener('click', onHistoryClick);
 
@@ -688,16 +732,8 @@
     }
 
     function setSubtitle() {
-      const text = {
-        home: '',
-        choose: 'Elige ejercicio',
-        workout: 'Registra serie por serie',
-        history: 'Días y grupos',
-        progress: 'Gráficas de progresión',
-        exercises: 'Gestiona ejercicios',
-        settings: 'Ajustes de la app'
-      }[state.screen] || 'Gon';
-      $('subtitle').textContent = text;
+      // Dejamos solo el título principal “Gon”. Nada de subtítulo debajo.
+      $('subtitle').textContent = '';
     }
 
     function persistDate() {
@@ -1178,6 +1214,7 @@
       renderSession();
       renderHistoryFilters();
       renderHistory();
+      renderTrainingHeatmap();
       renderProgressControls();
       renderChart();
       renderExerciseManagement();
@@ -1387,6 +1424,44 @@
       renderHistory();
     }
 
+    function renderTrainingHeatmap() {
+      const grid = $('heatGrid');
+      if (!grid) return;
+
+      const year = Number(state.heatmapYear || todayISO().slice(0, 4));
+      state.heatmapYear = year;
+      $('heatYear').textContent = String(year);
+
+      const counts = {};
+      state.logs.forEach(row => {
+        const date = normalizeDate(row.fecha);
+        if (date && date.startsWith(String(year))) counts[date] = (counts[date] || 0) + 1;
+      });
+
+      const trainedDays = Object.keys(counts).length;
+      const totalSets = Object.values(counts).reduce((sum, n) => sum + Number(n || 0), 0);
+      $('heatStats').textContent = `${trainedDays} día${trainedDays === 1 ? '' : 's'} entrenado${trainedDays === 1 ? '' : 's'} · ${totalSets} series`;
+      $('heatMonths').innerHTML = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'].map(m => `<span>${m}</span>`).join('');
+
+      const first = new Date(year, 0, 1);
+      const startOffset = (first.getDay() + 6) % 7; // lunes arriba
+      const daysInYear = new Date(year, 12, 0).getDate();
+      const cells = [];
+
+      for (let i = 0; i < startOffset; i++) cells.push('<span class="heat-dot blank"></span>');
+
+      for (let day = 1; day <= daysInYear; day++) {
+        const d = new Date(year, 0, day);
+        const iso = localISODate(d);
+        const count = counts[iso] || 0;
+        const level = count >= 16 ? 4 : count >= 10 ? 3 : count >= 5 ? 2 : count >= 1 ? 1 : 0;
+        const title = `${formatDateHuman(iso)} · ${count} serie${count === 1 ? '' : 's'}`;
+        cells.push(`<span class="heat-dot ${level ? `l${level}` : ''}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}"></span>`);
+      }
+
+      grid.innerHTML = cells.join('');
+    }
+
     function renderHistoryFilters() {
       const groups = ['Todos', ...getGroups()];
       const oldGroup = $('historyGroup').value || 'Todos';
@@ -1434,7 +1509,6 @@
         const groups = unique(rows.map(x => x.grupo)).join(', ');
         const details = document.createElement('details');
         details.className = 'day';
-        if (idx === 0) details.open = true;
         details.innerHTML = `<summary><span class="day-title"><span class="name">${escapeHtml(getDayName(date))}</span><span class="date">${formatDateHuman(date)}</span></span><span class="hint">${rows.length} series · ${compact(volume)} kg</span></summary>
           <div class="day-body">
             <div class="hint">${escapeHtml(groups)}</div>
@@ -1882,6 +1956,12 @@
         return d.toISOString().slice(0, 10);
       }
       return s;
+    }
+
+    function localISODate(d) {
+      const copy = new Date(d);
+      copy.setMinutes(copy.getMinutes() - copy.getTimezoneOffset());
+      return copy.toISOString().slice(0, 10);
     }
 
     function todayISO() {
