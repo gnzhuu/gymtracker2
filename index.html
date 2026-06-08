@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <title>Gon v17</title>
+  <title>Gon v19</title>
   <style>
     :root {
       --bg: #070a12;
@@ -405,9 +405,9 @@
           <button id="settingsSyncBtn" class="btn secondary" type="button">Sincronizar ahora</button>
           <button id="settingsTokenBtn" class="btn secondary" type="button">Cambiar contraseña</button>
           <button id="settingsRefreshBtn" class="btn secondary" type="button">Recargar datos de Sheets</button>
-          <button id="settingsRepairBtn" class="btn danger" type="button">Reparar datos locales</button>
+          <button id="settingsRepairBtn" class="btn danger" type="button">Reset local y recargar</button>
         </div>
-        <p class="hint" style="margin-top:10px">Actualizar app borra la caché de GitHub Pages y recarga la última versión. Recargar datos de Sheets reconstruye el histórico local desde la hoja. Reparar datos locales limpia históricos atascados y vuelve a traer lo que haya en Sheets; mantiene la contraseña.</p>
+        <p class="hint" style="margin-top:10px">Actualizar app solo trae código nuevo. Sincronizar/recargar datos usa Google Sheets como verdad central. Reset local limpia la copia del dispositivo y vuelve a traer lo que haya en Sheets; mantiene contraseña y borrador activo.</p>
       </div>
 
       <div class="card soft">
@@ -447,7 +447,7 @@
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
-    const APP_VERSION = 'v17';
+    const APP_VERSION = 'v19';
 
     const DEFAULT_EXERCISES = {
       'Pecho': ['Press banca', 'Press inclinado mancuerna', 'Aperturas', 'Fondos'],
@@ -470,7 +470,9 @@
       pendingDayNames: 'gymtracker_pending_day_names_v1',
       pendingDeletes: 'gymtracker_pending_deletes_v1',
       deletedDays: 'gymtracker_deleted_days_v1',
-      pendingExerciseDeletes: 'gymtracker_pending_exercise_deletes_v1'
+      pendingExerciseDeletes: 'gymtracker_pending_exercise_deletes_v1',
+      activeDraft: 'gymtracker_active_draft_v1',
+      lastSyncAt: 'gymtracker_last_sync_at_v1'
     };
 
     const OLD_LS = {
@@ -497,13 +499,23 @@
       deletedDays: loadJsonWithMigration(LS.deletedDays, null, []),
       pendingExerciseDeletes: loadJsonWithMigration(LS.pendingExerciseDeletes, null, []),
       apiToken: localStorage.getItem(LS.apiToken) || '',
-      draft: null,
-      syncing: false
+      draft: loadJsonWithMigration(LS.activeDraft, null, null),
+      syncing: false,
+      bootstrapping: false,
+      lastAutoSyncAt: 0
     };
 
     document.addEventListener('DOMContentLoaded', init);
-    window.addEventListener('online', () => { toast('Internet recuperado'); syncPending(); renderAll(); });
+    window.addEventListener('online', () => { toast('Internet recuperado'); syncData({ reason: 'online' }); renderAll(); });
     window.addEventListener('offline', () => { toast('Sin conexión. Guardando local.'); renderAll(); });
+    window.addEventListener('pageshow', () => scheduleAutoSync('pageshow'));
+    window.addEventListener('focus', () => scheduleAutoSync('focus'));
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) scheduleAutoSync('visible');
+      else persistActiveDraft();
+    });
+    window.addEventListener('pagehide', persistActiveDraft);
+    window.addEventListener('beforeunload', persistActiveDraft);
 
     function init() {
       const startDate = localStorage.getItem(LS.globalDate) || todayISO();
@@ -511,13 +523,15 @@
       $('todayText').textContent = formatDateHuman(startDate);
       bindEvents();
       renderAll();
+      restoreActiveDraft();
+      renderAll();
       registerServiceWorker();
       ensureApiTokenConfigured();
-      loadFromServer();
+      syncData({ reason: 'init' });
     }
 
     function bindEvents() {
-      $('syncStatus').addEventListener('click', () => syncPending(true));
+      $('syncStatus').addEventListener('click', () => syncData({ manual: true }));
       $('todayBtn').addEventListener('click', () => {
         $('globalDate').value = todayISO();
         persistDate();
@@ -525,7 +539,7 @@
       });
       $('globalDate').addEventListener('change', () => {
         persistDate();
-        if (state.draft) state.draft.fecha = $('globalDate').value || todayISO();
+        if (state.draft) { state.draft.fecha = $('globalDate').value || todayISO(); markDraftDirty(); }
         renderAll();
       });
       $('backToGroups').addEventListener('click', () => showScreen('home'));
@@ -552,11 +566,11 @@
       $('progressMetric').addEventListener('change', renderChart);
 
       $('addExerciseBtn').addEventListener('click', addExercise);
-      $('manualSyncBtn').addEventListener('click', () => syncPending(true));
+      $('manualSyncBtn').addEventListener('click', () => syncData({ manual: true }));
       $('settingsUpdateAppBtn').addEventListener('click', updateApp);
-      $('settingsSyncBtn').addEventListener('click', () => syncPending(true));
+      $('settingsSyncBtn').addEventListener('click', () => syncData({ manual: true }));
       $('settingsTokenBtn').addEventListener('click', openSetupModal);
-      $('settingsRefreshBtn').addEventListener('click', forceReloadFromServer);
+      $('settingsRefreshBtn').addEventListener('click', () => syncData({ manual: true, forceReload: true }));
       $('settingsRepairBtn').addEventListener('click', repairLocalData);
       $('saveApiTokenBtn').addEventListener('click', saveApiTokenFromModal);
       $('skipApiTokenBtn').addEventListener('click', () => {
@@ -576,53 +590,85 @@
       preventFastTapZoom();
     }
 
-    function loadFromServer() {
-      if (!hasServer() || !hasApiToken() || !navigator.onLine) return;
-      callApi('bootstrap')
-        .then(data => {
-          if (data && data.ok) {
-            mergeExercises(data.exercises || {});
-            replaceSyncedLogsFromServer(data.history || []);
-            mergeDayNames(data.dayNames || {});
-            saveLocal();
-            renderAll();
-            syncPending();
+    function scheduleAutoSync(reason) {
+      const now = Date.now();
+      if (now - state.lastAutoSyncAt < 2500) return;
+      state.lastAutoSyncAt = now;
+      syncData({ reason });
+    }
+
+    function syncData(options = {}) {
+      const manual = Boolean(options.manual);
+      const forceReload = Boolean(options.forceReload);
+
+      persistActiveDraft();
+
+      if (!hasServer() || !hasApiToken() || !navigator.onLine) {
+        renderSyncStatus();
+        if (manual) {
+          if (!hasApiToken()) {
+            openSetupModal();
+            toast('Introduce la contraseña');
+          } else {
+            toast('Sin conexión. Usando copia local');
           }
+        }
+        return Promise.resolve(false);
+      }
+
+      if (state.bootstrapping) return Promise.resolve(false);
+      state.bootstrapping = true;
+      renderSyncStatus(manual ? 'Sincronizando datos…' : 'Actualizando datos…');
+
+      return syncPending(false, { skipBootstrap: true })
+        .then(() => bootstrapFromServer({ silent: !manual && !forceReload }))
+        .then(ok => {
+          state.bootstrapping = false;
+          renderAll();
+          if (manual) toast(ok ? 'Datos actualizados' : 'No se pudo actualizar');
+          return ok;
         })
         .catch(err => {
           console.warn(err);
-          renderSyncStatus();
+          state.bootstrapping = false;
+          renderAll();
+          if (manual) toast('Error al actualizar datos');
+          return false;
         });
     }
 
-    function refreshHistoryFromServer() {
-      return forceReloadFromServer(false);
-    }
-
-    function forceReloadFromServer(showToast = true) {
-      if (!hasServer() || !hasApiToken() || !navigator.onLine) {
-        toast(!hasApiToken() ? 'Falta contraseña' : 'Sin conexión o sin API');
-        return Promise.resolve(false);
-      }
-      if (showToast) toast('Recargando desde Sheets…');
+    function bootstrapFromServer({ silent = false } = {}) {
+      if (!hasServer() || !hasApiToken() || !navigator.onLine) return Promise.resolve(false);
       return callApi('bootstrap')
         .then(data => {
           if (data && data.ok) {
-            mergeExercises(data.exercises || {});
+            replaceExercisesFromServer(data.exercises || {});
             replaceSyncedLogsFromServer(data.history || []);
             state.dayNames = data.dayNames || {};
+            localStorage.setItem(LS.lastSyncAt, new Date().toISOString());
             saveLocal();
-            renderAll();
-            if (showToast) toast('Datos recargados');
+            if (!silent) toast('Datos recargados de Sheets');
             return true;
           }
           throw new Error('Respuesta inválida');
         })
         .catch(err => {
           console.warn(err);
-          toast('No se pudo recargar');
+          if (!silent) toast('No se pudo recargar');
           return false;
         });
+    }
+
+    function loadFromServer() {
+      return syncData({ reason: 'legacy-load' });
+    }
+
+    function refreshHistoryFromServer() {
+      return syncData({ manual: true, forceReload: true });
+    }
+
+    function forceReloadFromServer(showToast = true) {
+      return syncData({ manual: showToast, forceReload: true });
     }
 
     function showScreen(screen) {
@@ -669,6 +715,7 @@
     function openExercise(exercise) {
       state.selectedExercise = exercise;
       state.draft = makeDraft(state.selectedGroup, exercise, $('globalDate').value || todayISO());
+      persistActiveDraft();
       showScreen('workout');
     }
 
@@ -680,7 +727,9 @@
         group,
         exercise,
         fecha,
-        sets
+        sets,
+        dirty: false,
+        updatedAt: new Date().toISOString()
       };
     }
 
@@ -697,6 +746,7 @@
       if (!state.draft) return;
       const last = state.draft.sets[state.draft.sets.length - 1];
       state.draft.sets.push({ ...last, notas: '' });
+      markDraftDirty();
       renderDraftSets();
     }
 
@@ -712,6 +762,7 @@
         return;
       }
       state.draft.sets.splice(index, 1);
+      markDraftDirty();
       renderDraftSets();
     }
 
@@ -729,6 +780,7 @@
       if (field === 'reps') value = Math.max(1, Math.round(value));
       if (field === 'rir') value = Math.max(0, Math.round(value));
       current[field] = value;
+      markDraftDirty();
       renderDraftSets();
     }
 
@@ -767,6 +819,47 @@
       } else {
         current[field] = Math.max(1, parseInt(input.value || '1', 10));
       }
+      markDraftDirty();
+    }
+
+    function markDraftDirty() {
+      if (!state.draft) return;
+      state.draft.dirty = true;
+      state.draft.updatedAt = new Date().toISOString();
+      persistActiveDraft();
+    }
+
+    function persistActiveDraft() {
+      try {
+        if (state.draft && state.draft.dirty) {
+          localStorage.setItem(LS.activeDraft, JSON.stringify(state.draft));
+        } else {
+          localStorage.removeItem(LS.activeDraft);
+        }
+      } catch (e) {}
+    }
+
+    function restoreActiveDraft() {
+      try {
+        const raw = localStorage.getItem(LS.activeDraft);
+        if (!raw) return false;
+        const draft = JSON.parse(raw);
+        if (!draft || !draft.group || !draft.exercise || !Array.isArray(draft.sets) || !draft.dirty) return false;
+        state.draft = draft;
+        state.selectedGroup = draft.group;
+        state.selectedExercise = draft.exercise;
+        state.screen = 'workout';
+        document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+        const screenEl = $('screen-workout');
+        if (screenEl) screenEl.classList.add('active');
+        const homeTab = document.querySelector('.tab[data-tab="home"]');
+        if (homeTab) homeTab.classList.add('active');
+        toast('Borrador restaurado');
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
 
     function saveDraftWorkout() {
@@ -804,8 +897,9 @@
       saveLocal();
       toast(`${entries.length} serie${entries.length === 1 ? '' : 's'} guardada${entries.length === 1 ? '' : 's'}`);
       state.draft = makeDraft(state.draft.group, state.draft.exercise, fecha);
+      localStorage.removeItem(LS.activeDraft);
       renderAll();
-      syncPending();
+      syncData({ reason: 'saved-workout' });
     }
 
     function addExercise() {
@@ -836,7 +930,7 @@
       saveLocal();
       renderAll();
       toast('Ejercicio añadido');
-      syncPending();
+      syncData({ reason: 'exercise-added' });
       if (startNow) openExercise(name);
       return true;
     }
@@ -890,11 +984,11 @@
       saveLocal();
       renderAll();
       toast('Ejercicio quitado');
-      syncPending(true);
+      syncData({ manual: true });
     }
 
-    function syncPending(manual = false) {
-      if (state.syncing) return;
+    function syncPending(manual = false, options = {}) {
+      if (state.syncing) return Promise.resolve(false);
       if (!hasServer() || !hasApiToken() || !navigator.onLine) {
         renderSyncStatus();
         if (manual) {
@@ -905,7 +999,7 @@
             toast('Ahora mismo no puedo sincronizar');
           }
         }
-        return;
+        return Promise.resolve(false);
       }
 
       const pendingLogs = state.logs.filter(x => x.syncStatus !== 'synced');
@@ -916,13 +1010,13 @@
       if (!pendingLogs.length && !pendingExercises.length && !pendingDayNames.length && !pendingDeletes.length && !pendingExerciseDeletes.length) {
         renderSyncStatus();
         if (manual) toast('Todo sincronizado');
-        return;
+        return Promise.resolve({ syncedCount: 0 });
       }
 
       state.syncing = true;
       renderSyncStatus('Sincronizando…');
 
-      syncDeletesSequential(pendingDeletes)
+      return syncDeletesSequential(pendingDeletes)
         .then(() => syncExerciseDeletesSequential(pendingExerciseDeletes))
         .then(() => syncDayNamesSequential(pendingDayNames))
         .then(() => syncExercisesSequential(pendingExercises))
@@ -931,7 +1025,11 @@
           state.syncing = false;
           saveLocal();
           renderAll();
+          if (!options.skipBootstrap) {
+            return bootstrapFromServer({ silent: !manual }).then(() => result);
+          }
           if (manual || (result && result.syncedCount)) toast('Sincronizado');
+          return result;
         })
         .catch(err => {
           console.warn(err);
@@ -940,6 +1038,7 @@
           saveLocal();
           renderAll();
           if (manual) toast('Error al sincronizar');
+          return false;
         });
     }
 
@@ -1114,7 +1213,9 @@
       const netText = navigator.onLine ? 'Con internet' : 'Sin conexión';
       const tokenText = hasApiToken() ? 'Contraseña guardada' : 'Sin contraseña configurada';
       const pendingText = pending ? `${pending} pendiente${pending === 1 ? '' : 's'}` : 'Sin pendientes';
-      el.innerHTML = `<strong>${netText}</strong><br>${tokenText}<br>${pendingText}`;
+      const lastSync = localStorage.getItem(LS.lastSyncAt);
+      const lastText = lastSync ? `Última sync: ${formatDateTimeShort(lastSync)}` : 'Aún sin sync completa';
+      el.innerHTML = `<strong>${netText}</strong><br>${tokenText}<br>${pendingText}<br>${lastText}`;
     }
 
     function renderGroups() {
@@ -1537,13 +1638,38 @@
       });
     }
 
-    function mergeExercises(serverExercises) {
+    function replaceExercisesFromServer(serverExercises) {
+      const next = {};
+
+      // Sheets manda la lista activa y se considera fuente de verdad.
       Object.keys(serverExercises || {}).forEach(group => {
-        if (!state.exercises[group]) state.exercises[group] = [];
-        serverExercises[group].forEach(ex => {
-          if (!state.exercises[group].some(x => norm(x) === norm(ex))) state.exercises[group].push(ex);
-        });
+        next[group] = unique((serverExercises[group] || []).filter(Boolean)).sort(alphaSort);
       });
+
+      // Mantener grupos conocidos aunque estén vacíos, para que la app no pierda la estructura.
+      GROUP_ORDER.forEach(group => {
+        if (!next[group]) next[group] = [];
+      });
+
+      // Añadir ejercicios creados localmente que aún no han subido.
+      state.pendingExercises.forEach(item => {
+        if (!item || !item.group || !item.exercise) return;
+        if (!next[item.group]) next[item.group] = [];
+        if (!next[item.group].some(x => norm(x) === norm(item.exercise))) next[item.group].push(item.exercise);
+      });
+
+      // Quitar ejercicios eliminados localmente que aún no han subido.
+      state.pendingExerciseDeletes.forEach(item => {
+        if (!item || !item.group || !item.exercise || !next[item.group]) return;
+        next[item.group] = next[item.group].filter(x => norm(x) !== norm(item.exercise));
+      });
+
+      Object.keys(next).forEach(group => { next[group] = unique(next[group]).sort(alphaSort); });
+      state.exercises = next;
+    }
+
+    function mergeExercises(serverExercises) {
+      replaceExercisesFromServer(serverExercises);
     }
 
     function mergeServerLogs(rows) {
@@ -1632,8 +1758,7 @@
       closeSetupModal();
       renderAll();
       toast('Contraseña guardada');
-      loadFromServer();
-      syncPending(true);
+      syncData({ manual: true });
     }
 
 
@@ -1697,17 +1822,24 @@
     }
 
     async function repairLocalData() {
-      const ok = window.confirm('Esto limpiará el histórico local atascado y lo reconstruirá desde Google Sheets. Mantiene contraseña, ejercicios locales y pendientes. ¿Continuar?');
+      const ok = window.confirm('Esto limpiará la copia local de este dispositivo y volverá a cargar desde Google Sheets. Mantiene contraseña, pendientes sin subir y borrador activo. ¿Continuar?');
       if (!ok) return;
-      toast('Reparando datos locales…');
-      // Dejamos las colas pendientes para no perder nada no sincronizado, pero limpiamos el histórico sincronizado.
-      state.logs = state.logs.filter(x => String(x.syncStatus || 'synced') !== 'synced');
+      toast('Reseteando copia local…');
+
+      const pendingLogs = state.logs.filter(x => String(x.syncStatus || 'synced') !== 'synced');
+      const activeDraftRaw = localStorage.getItem(LS.activeDraft);
+
+      state.logs = pendingLogs;
+      state.exercises = {};
+      GROUP_ORDER.forEach(group => { state.exercises[group] = []; });
       state.dayNames = {};
       saveLocal();
+      if (activeDraftRaw) localStorage.setItem(LS.activeDraft, activeDraftRaw);
+
       renderAll();
-      const loaded = await forceReloadFromServer(false);
-      if (loaded) toast('Datos locales reparados');
-      else toast('No se pudo reparar desde Sheets');
+      const loaded = await syncData({ manual: true, forceReload: true });
+      if (loaded) toast('Copia local reconstruida');
+      else toast('No se pudo reconstruir desde Sheets');
     }
 
     function getGroups() {
@@ -1789,6 +1921,13 @@
     function compact(n) {
       n = Number(n || 0);
       return n >= 1000 ? `${round(n / 1000)}k` : String(round(n));
+    }
+
+    function formatDateTimeShort(value) {
+      if (!value) return '';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return String(value);
+      return d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
 
     function formatDateHuman(iso) {
