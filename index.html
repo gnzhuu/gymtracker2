@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <title>Gym Tracker v16</title>
+  <title>Gon v17</title>
   <style>
     :root {
       --bg: #070a12;
@@ -40,6 +40,9 @@
     body::before { display: none; }
     button, input, select, textarea { font: inherit; color-scheme: dark; }
     button { cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+    .round-btn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    .exercise-card { -webkit-touch-callout: none; }
+    .exercise-card.long-pressing { outline: 2px solid rgba(125,211,252,.45); transform: scale(.985); }
     .round-btn, .tab, .btn, .seg-btn, .sync-pill { touch-action: manipulation; }
 
     .app {
@@ -57,6 +60,7 @@
     .topbar { position: relative; z-index: 11; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin: 6px 0 14px; }
     .brand h1 { margin: 0; font-size: 28px; letter-spacing: -.05em; line-height: 1; }
     .brand p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .brand p:empty { display: none; }
     .sync-pill { min-height: 34px; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); padding: 8px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
     .sync-pill.good { color: var(--good); border-color: rgba(52,211,153,.25); }
     .sync-pill.warn { color: var(--warn); border-color: rgba(251,191,36,.25); }
@@ -200,8 +204,8 @@
   <main class="app">
     <header class="topbar">
       <div class="brand">
-        <h1>Gym Tracker</h1>
-        <p id="subtitle">Elige grupo muscular</p>
+        <h1>Gon</h1>
+        <p id="subtitle"></p>
       </div>
       <button id="syncStatus" class="sync-pill warn" type="button">Cargando…</button>
     </header>
@@ -367,7 +371,7 @@
       <div class="card">
         <div class="section-title">
           <h2>Ejercicios</h2>
-          <span class="hint">Añade los tuyos</span>
+          <span class="hint">Añade o mantén pulsado para borrar</span>
         </div>
         <div class="grid">
           <label>Grupo muscular
@@ -443,7 +447,7 @@
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
-    const APP_VERSION = 'v15';
+    const APP_VERSION = 'v17';
 
     const DEFAULT_EXERCISES = {
       'Pecho': ['Press banca', 'Press inclinado mancuerna', 'Aperturas', 'Fondos'],
@@ -465,7 +469,8 @@
       dayNames: 'gymtracker_day_names_v1',
       pendingDayNames: 'gymtracker_pending_day_names_v1',
       pendingDeletes: 'gymtracker_pending_deletes_v1',
-      deletedDays: 'gymtracker_deleted_days_v1'
+      deletedDays: 'gymtracker_deleted_days_v1',
+      pendingExerciseDeletes: 'gymtracker_pending_exercise_deletes_v1'
     };
 
     const OLD_LS = {
@@ -490,6 +495,7 @@
       pendingDayNames: loadJsonWithMigration(LS.pendingDayNames, null, []),
       pendingDeletes: loadJsonWithMigration(LS.pendingDeletes, null, []),
       deletedDays: loadJsonWithMigration(LS.deletedDays, null, []),
+      pendingExerciseDeletes: loadJsonWithMigration(LS.pendingExerciseDeletes, null, []),
       apiToken: localStorage.getItem(LS.apiToken) || '',
       draft: null,
       syncing: false
@@ -529,6 +535,7 @@
       $('addSetBtn').addEventListener('click', addDraftSet);
       $('duplicateSetBtn').addEventListener('click', duplicateLastDraftSet);
       $('saveExerciseWorkoutBtn').addEventListener('click', saveDraftWorkout);
+      $('draftSets').addEventListener('pointerdown', onDraftPointerDown);
       $('draftSets').addEventListener('click', onDraftClick);
       $('draftSets').addEventListener('input', onDraftInput);
       $('draftSets').addEventListener('change', onDraftInput);
@@ -636,14 +643,14 @@
 
     function setSubtitle() {
       const text = {
-        home: 'Elige grupo muscular',
+        home: '',
         choose: 'Elige ejercicio',
         workout: 'Registra serie por serie',
         history: 'Días y grupos',
         progress: 'Gráficas de progresión',
         exercises: 'Gestiona ejercicios',
         settings: 'Ajustes de la app'
-      }[state.screen] || 'Gym Tracker';
+      }[state.screen] || 'Gon';
       $('subtitle').textContent = text;
     }
 
@@ -708,8 +715,7 @@
       renderDraftSets();
     }
 
-    function onDraftClick(event) {
-      const btn = event.target.closest('[data-step-action]');
+    function applyDraftStep(btn) {
       if (!btn || !state.draft) return;
       const index = Number(btn.dataset.index);
       const field = btn.dataset.field;
@@ -724,6 +730,25 @@
       if (field === 'rir') value = Math.max(0, Math.round(value));
       current[field] = value;
       renderDraftSets();
+    }
+
+    function onDraftPointerDown(event) {
+      const btn = event.target.closest('[data-step-action]');
+      if (!btn || !state.draft) return;
+      event.preventDefault();
+      applyDraftStep(btn);
+    }
+
+    function onDraftClick(event) {
+      const btn = event.target.closest('[data-step-action]');
+      if (!btn || !state.draft) return;
+      // En móvil ya actuamos en pointerdown para que no haya pausa. En navegadores
+      // sin Pointer Events dejamos este click como respaldo.
+      if (window.PointerEvent) {
+        event.preventDefault();
+        return;
+      }
+      applyDraftStep(btn);
     }
 
     function onDraftInput(event) {
@@ -816,6 +841,58 @@
       return true;
     }
 
+
+    function attachExerciseCardHandlers(btn, exercise) {
+      let timer = null;
+      let longPressed = false;
+      const clear = () => {
+        if (timer) window.clearTimeout(timer);
+        timer = null;
+        btn.classList.remove('long-pressing');
+      };
+      btn.addEventListener('contextmenu', ev => ev.preventDefault());
+      btn.addEventListener('pointerdown', ev => {
+        if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+        longPressed = false;
+        clear();
+        btn.classList.add('long-pressing');
+        timer = window.setTimeout(() => {
+          longPressed = true;
+          clear();
+          deleteExerciseFromGroup(state.selectedGroup, exercise);
+        }, 650);
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
+        btn.addEventListener(type, () => clear());
+      });
+      btn.addEventListener('click', ev => {
+        if (longPressed) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          longPressed = false;
+          return;
+        }
+        openExercise(exercise);
+      });
+    }
+
+    function deleteExerciseFromGroup(group, exercise) {
+      if (!group || !exercise) return;
+      const used = state.logs.some(x => norm(x.grupo) === norm(group) && norm(x.ejercicio) === norm(exercise));
+      const msg = used
+        ? `¿Quitar "${exercise}" de ${group}? No borra el histórico ya guardado.`
+        : `¿Quitar "${exercise}" de ${group}?`;
+      if (!window.confirm(msg)) return;
+      state.exercises[group] = (state.exercises[group] || []).filter(x => norm(x) !== norm(exercise));
+      state.pendingExercises = state.pendingExercises.filter(x => !(norm(x.group) === norm(group) && norm(x.exercise) === norm(exercise)));
+      state.pendingExerciseDeletes.push({ group, exercise, deletedAt: new Date().toISOString() });
+      if (state.selectedExercise && norm(state.selectedExercise) === norm(exercise)) state.selectedExercise = '';
+      saveLocal();
+      renderAll();
+      toast('Ejercicio quitado');
+      syncPending(true);
+    }
+
     function syncPending(manual = false) {
       if (state.syncing) return;
       if (!hasServer() || !hasApiToken() || !navigator.onLine) {
@@ -835,7 +912,8 @@
       const pendingExercises = [...state.pendingExercises];
       const pendingDayNames = [...state.pendingDayNames];
       const pendingDeletes = [...state.pendingDeletes];
-      if (!pendingLogs.length && !pendingExercises.length && !pendingDayNames.length && !pendingDeletes.length) {
+      const pendingExerciseDeletes = [...state.pendingExerciseDeletes];
+      if (!pendingLogs.length && !pendingExercises.length && !pendingDayNames.length && !pendingDeletes.length && !pendingExerciseDeletes.length) {
         renderSyncStatus();
         if (manual) toast('Todo sincronizado');
         return;
@@ -845,6 +923,7 @@
       renderSyncStatus('Sincronizando…');
 
       syncDeletesSequential(pendingDeletes)
+        .then(() => syncExerciseDeletesSequential(pendingExerciseDeletes))
         .then(() => syncDayNamesSequential(pendingDayNames))
         .then(() => syncExercisesSequential(pendingExercises))
         .then(() => syncLogs(pendingLogs))
@@ -875,6 +954,25 @@
             removeLocalDay(date);
             state.pendingDeletes = state.pendingDeletes.filter(x => normalizeDate(typeof x === 'string' ? x : x.date) !== date);
             state.deletedDays = state.deletedDays.filter(x => normalizeDate(x.date || x) !== date);
+          })
+        );
+      });
+      return chain;
+    }
+
+
+    function syncExerciseDeletesSequential(items) {
+      if (!items.length) return Promise.resolve();
+      let chain = Promise.resolve();
+      const uniqueItems = [];
+      items.forEach(item => {
+        if (!item || !item.group || !item.exercise) return;
+        if (!uniqueItems.some(x => norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise))) uniqueItems.push(item);
+      });
+      uniqueItems.forEach(item => {
+        chain = chain.then(() => callApi('deleteExercise', { group: item.group, exercise: item.exercise })
+          .then(() => {
+            state.pendingExerciseDeletes = state.pendingExerciseDeletes.filter(x => !(norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise)));
           })
         );
       });
@@ -989,7 +1087,7 @@
 
     function renderSyncStatus(customText) {
       const el = $('syncStatus');
-      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length + state.pendingDayNames.length + state.pendingDeletes.length;
+      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length + state.pendingDayNames.length + state.pendingDeletes.length + state.pendingExerciseDeletes.length;
       el.className = 'sync-pill';
       if (customText) {
         el.textContent = customText;
@@ -1012,7 +1110,7 @@
     function renderSettingsStatus() {
       const el = $('settingsStatus');
       if (!el) return;
-      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length + state.pendingDayNames.length + state.pendingDeletes.length;
+      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length + state.pendingDayNames.length + state.pendingDeletes.length + state.pendingExerciseDeletes.length;
       const netText = navigator.onLine ? 'Con internet' : 'Sin conexión';
       const tokenText = hasApiToken() ? 'Contraseña guardada' : 'Sin contraseña configurada';
       const pendingText = pending ? `${pending} pendiente${pending === 1 ? '' : 's'}` : 'Sin pendientes';
@@ -1023,12 +1121,11 @@
       const box = $('groupGrid');
       box.innerHTML = '';
       getGroups().forEach(group => {
-        const count = (state.exercises[group] || []).length;
         const setsToday = getRowsForDate($('globalDate').value || todayISO()).filter(x => x.grupo === group).length;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'group-card';
-        btn.innerHTML = `<strong>${escapeHtml(group)}</strong><span>${count} ejercicios · ${setsToday} series hoy</span>`;
+        btn.innerHTML = `<strong>${escapeHtml(group)}</strong><span>${setsToday ? `${setsToday} series hoy` : 'Sin series hoy'}</span>`;
         btn.addEventListener('click', () => openGroup(group));
         box.appendChild(btn);
       });
@@ -1051,7 +1148,7 @@
         btn.className = 'exercise-card';
         const detail = last ? `Última: ${last.kg} kg × ${last.reps} reps` : 'Sin registros todavía';
         btn.innerHTML = `<strong>${escapeHtml(exercise)}</strong><span>${escapeHtml(detail)}${best ? ` · PR ${best} kg` : ''}</span>`;
-        btn.addEventListener('click', () => openExercise(exercise));
+        attachExerciseCardHandlers(btn, exercise);
         list.appendChild(btn);
       });
     }
@@ -1485,6 +1582,7 @@
       localStorage.setItem(LS.pendingDayNames, JSON.stringify(state.pendingDayNames));
       localStorage.setItem(LS.pendingDeletes, JSON.stringify(state.pendingDeletes));
       localStorage.setItem(LS.deletedDays, JSON.stringify(state.deletedDays));
+      localStorage.setItem(LS.pendingExerciseDeletes, JSON.stringify(state.pendingExerciseDeletes));
       localStorage.setItem(LS.selectedGroup, state.selectedGroup);
     }
 
