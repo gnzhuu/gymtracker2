@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <title>Gym Tracker v15</title>
+  <title>Gym Tracker v16</title>
   <style>
     :root {
       --bg: #070a12;
@@ -108,7 +108,7 @@
     .metric .n { font-size: 19px; font-weight: 950; letter-spacing: -.04em; }
     .metric .t { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
-    .draft-set { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035)); border-radius: 20px; padding: 10px; margin: 9px 0; }
+    .draft-set { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035)); border-radius: 20px; padding: 9px; margin: 8px 0; overflow: hidden; }
     .draft-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px; }
     .draft-head strong { font-size: 17px; letter-spacing: -.03em; }
     .draft-head span { color: var(--muted); font-size: 12px; }
@@ -116,10 +116,10 @@
     .stepper-grid.compact { grid-template-columns: 1fr; margin-top: 10px; }
     .stepper { display: grid; gap: 5px; }
     .stepper-label { color: var(--muted); font-size: 12px; font-weight: 950; text-transform: uppercase; letter-spacing: .06em; text-align: center; }
-    .stepper-box { display: grid; grid-template-columns: 46px minmax(82px, 1fr) 46px; gap: 7px; align-items: center; }
-    .round-btn { width: 46px; height: 50px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.095); color: var(--text); font-size: 25px; font-weight: 950; display: grid; place-items: center; }
+    .stepper-box { display: grid; grid-template-columns: 42px minmax(92px, 1fr) 42px; gap: 6px; align-items: center; max-width: 100%; }
+    .round-btn { width: 42px; height: 48px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.095); color: var(--text); font-size: 25px; font-weight: 950; display: grid; place-items: center; }
     .round-btn:disabled { opacity: .35; }
-    .step-input { min-height: 50px; text-align: center; padding: 6px 5px; font-size: clamp(19px, 5.5vw, 24px); line-height: 1; font-weight: 950; letter-spacing: -.035em; border-radius: 16px; min-width: 0; }
+    .step-input { min-height: 48px; text-align: center; padding: 6px 4px; font-size: clamp(18px, 5vw, 23px); line-height: 1; font-weight: 950; letter-spacing: -.035em; border-radius: 16px; min-width: 0; }
     .step-input.small { min-height: 48px; font-size: 19px; }
     .advanced-set { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 7px; }
     .advanced-set summary { list-style: none; color: var(--muted); font-size: 12px; font-weight: 900; cursor: pointer; padding: 4px 0; }
@@ -176,7 +176,11 @@
     .choose-add { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
     .exercise-history-mini { display: grid; gap: 8px; }
     .compact-history-day { border: 1px solid var(--line); border-radius: 16px; padding: 10px; background: rgba(255,255,255,.04); }
-    @media (min-width: 390px) {
+    /* iPhone 14 Pro ronda los 390 px de ancho CSS, pero dentro de tarjetas
+       el ancho útil baja mucho. Mantener kg/reps en dos columnas provocaba
+       que el botón + de reps se saliera. Solo usamos dos columnas en pantallas
+       realmente anchas; en móvil queda en vertical y compacto. */
+    @media (min-width: 480px) {
       .stepper-grid { grid-template-columns: 1fr 1fr; }
       .stepper-grid.compact { grid-template-columns: 1fr; }
     }
