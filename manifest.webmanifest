@@ -1,6 +1,6 @@
 {
-  "name": "Gym Tracker",
-  "short_name": "Gym",
+  "name": "Gon",
+  "short_name": "Gon",
   "description": "Registro de entrenamientos de fuerza con histórico, progreso y sincronización con Google Sheets.",
   "start_url": "./index.html",
   "display": "standalone",
