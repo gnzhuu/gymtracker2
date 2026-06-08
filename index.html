@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <title>Gym Tracker v12</title>
+  <title>Gym Tracker v13</title>
   <style>
     :root {
       --bg: #070a12;
@@ -108,25 +108,25 @@
     .metric .n { font-size: 19px; font-weight: 950; letter-spacing: -.04em; }
     .metric .t { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
-    .draft-set { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035)); border-radius: 24px; padding: 14px; margin: 12px 0; }
-    .draft-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 13px; }
+    .draft-set { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035)); border-radius: 20px; padding: 10px; margin: 9px 0; }
+    .draft-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px; }
     .draft-head strong { font-size: 17px; letter-spacing: -.03em; }
     .draft-head span { color: var(--muted); font-size: 12px; }
-    .stepper-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .stepper-grid { display: grid; grid-template-columns: 1fr; gap: 9px; }
     .stepper-grid.compact { grid-template-columns: 1fr; margin-top: 10px; }
-    .stepper { display: grid; gap: 8px; }
+    .stepper { display: grid; gap: 5px; }
     .stepper-label { color: var(--muted); font-size: 12px; font-weight: 950; text-transform: uppercase; letter-spacing: .06em; text-align: center; }
-    .stepper-box { display: grid; grid-template-columns: 54px minmax(112px, 1fr) 54px; gap: 9px; align-items: center; }
-    .round-btn { width: 54px; height: 58px; border-radius: 18px; border: 1px solid var(--line); background: rgba(255,255,255,.095); color: var(--text); font-size: 28px; font-weight: 950; display: grid; place-items: center; }
+    .stepper-box { display: grid; grid-template-columns: 46px minmax(82px, 1fr) 46px; gap: 7px; align-items: center; }
+    .round-btn { width: 46px; height: 50px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.095); color: var(--text); font-size: 25px; font-weight: 950; display: grid; place-items: center; }
     .round-btn:disabled { opacity: .35; }
-    .step-input { min-height: 58px; text-align: center; padding: 8px 8px; font-size: clamp(22px, 6.8vw, 28px); line-height: 1; font-weight: 950; letter-spacing: -.035em; border-radius: 18px; min-width: 0; }
+    .step-input { min-height: 50px; text-align: center; padding: 6px 5px; font-size: clamp(19px, 5.5vw, 24px); line-height: 1; font-weight: 950; letter-spacing: -.035em; border-radius: 16px; min-width: 0; }
     .step-input.small { min-height: 48px; font-size: 19px; }
-    .advanced-set { margin-top: 11px; border-top: 1px solid var(--line); padding-top: 10px; }
+    .advanced-set { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 7px; }
     .advanced-set summary { list-style: none; color: var(--muted); font-size: 12px; font-weight: 900; cursor: pointer; padding: 4px 0; }
     .advanced-set summary::-webkit-details-marker { display: none; }
     .advanced-set summary::after { content: '  ›'; }
     .advanced-set[open] summary::after { content: '  ˅'; }
-    .note-mini { margin-top: 10px; }
+    .note-mini { margin-top: 8px; }
     .note-mini input { min-height: 42px; border-radius: 14px; }
 
     .session-list, .history-list, .exercise-manage-list { display: grid; gap: 9px; }
@@ -172,14 +172,23 @@
     .setup-box p { margin: 0 0 14px; color: var(--muted); line-height: 1.45; font-size: 14px; }
     .setup-actions { display: grid; gap: 10px; margin-top: 12px; }
 
+
+    .choose-add { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+    .exercise-history-mini { display: grid; gap: 8px; }
+    .compact-history-day { border: 1px solid var(--line); border-radius: 16px; padding: 10px; background: rgba(255,255,255,.04); }
+    @media (min-width: 390px) {
+      .stepper-grid { grid-template-columns: 1fr 1fr; }
+      .stepper-grid.compact { grid-template-columns: 1fr; }
+    }
+
     @media (max-width: 370px) {
       .app { padding-left: 10px; padding-right: 10px; }
       .brand h1 { font-size: 25px; }
       .group-grid { gap: 8px; }
       .stepper-grid { grid-template-columns: 1fr; }
-      .stepper-box { grid-template-columns: 48px minmax(104px, 1fr) 48px; gap: 8px; }
-      .round-btn { width: 48px; }
-      .step-input { font-size: 23px; }
+      .stepper-box { grid-template-columns: 42px minmax(74px, 1fr) 42px; gap: 6px; }
+      .round-btn { width: 42px; height: 48px; }
+      .step-input { font-size: 20px; }
     }
   </style>
 </head>
@@ -236,6 +245,13 @@
           </div>
         </div>
         <div id="exerciseChoiceList" class="exercise-list"></div>
+        <div class="choose-add">
+          <label>Añadir ejercicio a este grupo
+            <input id="chooseNewExerciseName" type="text" autocomplete="off" placeholder="Ej: Press banca agarre cerrado">
+          </label>
+          <div style="height:9px"></div>
+          <button id="chooseAddExerciseBtn" class="btn secondary" type="button">Añadir y empezar</button>
+        </div>
       </div>
     </section>
 
@@ -250,15 +266,13 @@
             </div>
           </div>
         </div>
-        <label>Fecha
-          <input id="workoutDate" type="date">
-        </label>
+        <p class="hint" style="margin:8px 0 0">Fecha: <strong id="workoutDateText"></strong></p>
       </div>
 
       <div class="card">
         <div class="section-title">
           <h2>Series</h2>
-          <span class="hint">4 series por defecto · Kg y reps grandes</span>
+          <span class="hint">4 series por defecto</span>
         </div>
         <div id="draftSets"></div>
         <div class="grid two">
@@ -275,6 +289,14 @@
           <span class="hint" id="currentExerciseStats">0 series</span>
         </div>
         <div id="currentExerciseToday" class="session-list"></div>
+      </div>
+
+      <div class="card soft">
+        <div class="section-title">
+          <h2>Histórico de este ejercicio</h2>
+          <span class="hint" id="exerciseHistoryStats">Últimos días</span>
+        </div>
+        <div id="exerciseHistoryMini" class="exercise-history-mini"></div>
       </div>
     </section>
 
@@ -415,7 +437,7 @@
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
-    const APP_VERSION = 'v12';
+    const APP_VERSION = 'v13';
 
     const DEFAULT_EXERCISES = {
       'Pecho': ['Press banca', 'Press inclinado mancuerna', 'Aperturas', 'Fondos'],
@@ -472,7 +494,6 @@
     function init() {
       const startDate = localStorage.getItem(LS.globalDate) || todayISO();
       $('globalDate').value = startDate;
-      $('workoutDate').value = startDate;
       $('todayText').textContent = formatDateHuman(startDate);
       bindEvents();
       renderAll();
@@ -485,25 +506,18 @@
       $('syncStatus').addEventListener('click', () => syncPending(true));
       $('todayBtn').addEventListener('click', () => {
         $('globalDate').value = todayISO();
-        $('workoutDate').value = todayISO();
         persistDate();
         renderAll();
       });
       $('globalDate').addEventListener('change', () => {
-        $('workoutDate').value = $('globalDate').value || todayISO();
         persistDate();
         if (state.draft) state.draft.fecha = $('globalDate').value || todayISO();
         renderAll();
       });
-      $('workoutDate').addEventListener('change', () => {
-        $('globalDate').value = $('workoutDate').value || todayISO();
-        persistDate();
-        if (state.draft) state.draft.fecha = $('workoutDate').value || todayISO();
-        renderAll();
-      });
-
       $('backToGroups').addEventListener('click', () => showScreen('home'));
       $('backToExercises').addEventListener('click', () => showScreen('choose'));
+      $('chooseAddExerciseBtn').addEventListener('click', addExerciseFromChoose);
+      $('chooseNewExerciseName').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') addExerciseFromChoose(); });
       $('addSetBtn').addEventListener('click', addDraftSet);
       $('duplicateSetBtn').addEventListener('click', duplicateLastDraftSet);
       $('saveExerciseWorkoutBtn').addEventListener('click', saveDraftWorkout);
@@ -624,7 +638,6 @@
     function openExercise(exercise) {
       state.selectedExercise = exercise;
       state.draft = makeDraft(state.selectedGroup, exercise, $('globalDate').value || todayISO());
-      $('workoutDate').value = state.draft.fecha;
       showScreen('workout');
     }
 
@@ -709,7 +722,7 @@
 
     function saveDraftWorkout() {
       if (!state.draft) return;
-      const fecha = $('workoutDate').value || todayISO();
+      const fecha = state.draft.fecha || $('globalDate').value || todayISO();
       const baseSerie = state.logs.filter(x => x.fecha === fecha && x.ejercicio === state.draft.exercise).length;
       const entries = [];
 
@@ -749,19 +762,34 @@
     function addExercise() {
       const group = $('newExerciseGroup').value;
       const name = $('newExerciseName').value.trim();
-      if (!group || !name) { toast('Falta grupo o nombre'); return; }
+      const ok = addExerciseToGroup(group, name);
+      if (ok) $('newExerciseName').value = '';
+    }
+
+    function addExerciseFromChoose() {
+      const group = state.selectedGroup;
+      const input = $('chooseNewExerciseName');
+      const name = input.value.trim();
+      const ok = addExerciseToGroup(group, name, true);
+      if (ok) input.value = '';
+    }
+
+    function addExerciseToGroup(group, name, startNow = false) {
+      if (!group || !name) { toast('Falta nombre del ejercicio'); return false; }
       if (!state.exercises[group]) state.exercises[group] = [];
       if (state.exercises[group].some(x => norm(x) === norm(name))) {
         toast('Ese ejercicio ya existe');
-        return;
+        if (startNow) openExercise(state.exercises[group].find(x => norm(x) === norm(name)) || name);
+        return false;
       }
       state.exercises[group].push(name);
       state.pendingExercises.push({ group, exercise: name, createdAt: new Date().toISOString() });
-      $('newExerciseName').value = '';
       saveLocal();
       renderAll();
       toast('Ejercicio añadido');
       syncPending();
+      if (startNow) openExercise(name);
+      return true;
     }
 
     function syncPending(manual = false) {
@@ -984,7 +1012,7 @@
       const list = $('exerciseChoiceList');
       const exercises = state.exercises[state.selectedGroup] || [];
       if (!exercises.length) {
-        list.innerHTML = '<div class="empty">No hay ejercicios en este grupo. Añádelo en la pestaña Ejercicios.</div>';
+        list.innerHTML = '<div class="empty">No hay ejercicios en este grupo. Puedes añadir uno abajo.</div>';
         return;
       }
       list.innerHTML = '';
@@ -1005,9 +1033,10 @@
       if (!state.draft) return;
       $('workoutGroupLabel').textContent = state.draft.group;
       $('workoutExerciseTitle').textContent = state.draft.exercise;
-      $('workoutDate').value = state.draft.fecha || $('globalDate').value || todayISO();
+      $('workoutDateText').textContent = formatDateHuman(state.draft.fecha || $('globalDate').value || todayISO());
       renderDraftSets();
       renderCurrentExerciseToday();
+      renderExerciseHistoryMini();
     }
 
     function renderDraftSets() {
@@ -1094,6 +1123,29 @@
         return;
       }
       box.innerHTML = `<div class="session-card"><div class="sets-inline">${rows.map(row => setPill(row)).join('')}</div></div>`;
+    }
+
+    function renderExerciseHistoryMini() {
+      const box = $('exerciseHistoryMini');
+      const stats = $('exerciseHistoryStats');
+      if (!box || !state.draft) return;
+      const rows = state.logs.filter(x => x.ejercicio === state.draft.exercise).slice();
+      if (!rows.length) {
+        stats.textContent = 'Sin histórico';
+        box.innerHTML = '<div class="empty">Aún no hay registros anteriores de este ejercicio.</div>';
+        return;
+      }
+      const byDate = groupBy(rows, x => x.fecha);
+      const dates = Object.keys(byDate).sort((a,b) => b.localeCompare(a)).slice(0, 6);
+      stats.textContent = `${dates.length} día${dates.length === 1 ? '' : 's'}`;
+      box.innerHTML = dates.map(date => {
+        const dayRows = byDate[date].slice().sort((a,b) => Number(a.serie) - Number(b.serie));
+        const volume = dayRows.reduce((s,x) => s + Number(x.kg || 0) * Number(x.reps || 0), 0);
+        return `<div class="compact-history-day">
+          <div class="line1"><span>${formatDateHuman(date)}</span><span>${compact(volume)} kg</span></div>
+          <div class="sets-inline">${dayRows.map(row => setPill(row)).join('')}</div>
+        </div>`;
+      }).join('');
     }
 
     function setPill(row) {
