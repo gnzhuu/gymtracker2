@@ -1,10 +1,10 @@
-# GymTracker v41 — Fix popup histórico
+# GymTracker v42 — Icono NT
 
-Base: v40.
-Corrige:
-- La pulsación larga en Histórico ya funciona.
-- Los días ahora tienen data-day.
-- No se bloquea el toque normal para abrir/cerrar.
-- Se mantiene desactivada la selección automática de texto.
+Base: v41.
+Cambios:
+- Nuevo icon.svg diseñado manualmente.
+- Nuevos icon-180.png, icon-192.png e icon-512.png para iPhone/PWA.
+- Manifest actualizado.
+- apple-touch-icon añadido al HTML.
 
 No hace falta tocar Apps Script.

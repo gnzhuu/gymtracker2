@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gym-tracker-v41-history-popup-fixed';
+const CACHE_NAME = 'gym-tracker-v42-icon-nt';
 const APP_SHELL = [
   './',
   './index.html',
