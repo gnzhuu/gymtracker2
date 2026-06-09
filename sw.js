@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gym-tracker-v40-dark-menu-history-popup';
+const CACHE_NAME = 'gym-tracker-v41-history-popup-fixed';
 const APP_SHELL = [
   './',
   './index.html',

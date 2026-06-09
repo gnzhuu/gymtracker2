@@ -1312,6 +1312,24 @@ details.history-day .btn {
   width: 100%;
 }
 
+
+
+/* ===========================================================
+   v41 — Fix pulsación larga Histórico
+   details.day ahora tiene data-day; no se bloquea el tap normal.
+   =========================================================== */
+
+#historyList details.day,
+#historyList details.day summary,
+#historyList .day-title,
+#historyList .day-body,
+#historyList .day-exercise {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 </style>
 </head>
 <body>
@@ -2728,6 +2746,7 @@ details.history-day .btn {
         const groups = unique(rows.map(x => x.grupo)).join(', ');
         const details = document.createElement('details');
         details.className = 'day';
+        details.dataset.day = date;
         details.innerHTML = `<summary><span class="day-title"><span class="name">${escapeHtml(getDayName(date))}</span><span class="date">${formatDateHuman(date)}</span></span><span class="hint">${rows.length} series · ${compact(volume)} kg</span></summary>
           <div class="day-body">
             <div class="hint">${escapeHtml(groups)}</div>
@@ -2831,8 +2850,6 @@ details.history-day .btn {
       if (!dayEl) return;
       if (event.pointerType === 'mouse' && event.button !== 0) return;
 
-      event.preventDefault();
-
       const date = dayEl.dataset.day;
       if (!date) return;
 
@@ -2840,6 +2857,10 @@ details.history-day .btn {
       dayEl.classList.add('long-pressing');
 
       historyLongPressTimer = window.setTimeout(() => {
+        try {
+          const sel = window.getSelection && window.getSelection();
+          if (sel && sel.removeAllRanges) sel.removeAllRanges();
+        } catch (e) {}
         clearHistoryLongPress();
         openHistoryActionPopup(date);
       }, 650);
