@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gym-tracker-v42-icon-nt';
+const CACHE_NAME = 'gym-tracker-v43-sheet-delete-fix';
 const APP_SHELL = [
   './',
   './index.html',
