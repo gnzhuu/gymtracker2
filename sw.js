@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gym-tracker-v26-terminal';
+const CACHE_NAME = 'gym-tracker-v30-reference-console';
 const APP_SHELL = [
   './',
   './index.html',

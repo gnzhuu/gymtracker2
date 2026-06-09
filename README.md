@@ -1,22 +1,18 @@
-# GymTracker — Terminal UI v26
+# GymTracker v30 — Reference Console UI
 
-Versión visual tipo terminal/consola para GitHub Pages.
+Hecha partiendo de la v25.
 
-## Subir a GitHub Pages
+Visual inspirado en las capturas:
+- cabecera con barra cyan
+- tarjetas oscuras con borde fino
+- títulos tipo terminal
+- barra inferior /train /cal /stats /lib /cfg
+- sin botón central +
 
-Reemplaza en la raíz del repo:
+Sube a GitHub Pages:
+- index.html
+- sw.js
+- manifest.webmanifest
+- icon.svg
 
-- `index.html`
-- `sw.js`
-- `manifest.webmanifest`
-- `icon.svg`
-
-No hace falta tocar Apps Script para esta versión si ya tienes el backend de la v19 o posterior funcionando.
-
-## Actualizar en el móvil
-
-Abre la app y pulsa:
-
-`Ajustes → Actualizar app`
-
-Esta versión solo cambia la apariencia, no cambia la base de datos.
+No hace falta tocar Apps Script.
