@@ -1,14 +1,18 @@
-# GymTracker v39 — Acciones por pulsación larga
+# GymTracker v40 — Barra inferior oscura + popup Histórico
 
-Base: v38.
+Base: v39.
 Mantiene:
 - Fondo B #232629.
 - Histórico visible.
 - Constancia binaria.
+- Quitar serie por pulsación larga.
 
 Cambios:
-- En Histórico, Editar nombre / Borrar día aparecen al mantener pulsado el entrenamiento.
-- En Series, se elimina el botón visible "Quitar".
-- Para quitar una serie del borrador, mantén pulsada la tarjeta de la serie.
+- Barra inferior oscura, pegando con el fondo B y el tema NT.
+- En Histórico, mantener pulsado abre un popup:
+  - Editar nombre
+  - Borrar
+  - Cancelar
+- Se desactiva la selección de texto al mantener pulsado en Histórico.
 
 No hace falta tocar Apps Script.

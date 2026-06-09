@@ -1185,6 +1185,133 @@ details.history-day .btn {
   box-shadow: var(--nt-bevel-pressed);
 }
 
+
+
+/* ===========================================================
+   v40 — Barra inferior oscura + popup Histórico
+   =========================================================== */
+
+/* Barra inferior oscura tipo dock NT */
+.bottom-nav,
+.tabs {
+  background: linear-gradient(180deg, #30333a 0%, #232629 58%, #1b1d20 100%);
+  border-top: 1px solid #111315;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.12),
+    0 -1px 0 #4c535d,
+    0 -10px 22px rgba(0,0,0,.24);
+}
+
+.tab {
+  color: #d7dadc;
+  text-shadow: 0 1px 0 #000;
+  border-color: transparent;
+}
+
+.tab .ico,
+.tab b {
+  color: #d7dadc;
+}
+
+.tab.active {
+  background: linear-gradient(180deg, #414750 0%, #30343b 100%);
+  color: #ffffff;
+  border: 1px solid #69727d;
+  border-left: 4px solid var(--nt-teal);
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,.18),
+    inset -1px -1px 0 rgba(0,0,0,.60);
+}
+
+.tab.active .ico,
+.tab.active b {
+  color: #7ee7dc;
+}
+
+/* Histórico: no seleccionar texto al mantener pulsado */
+#historyList,
+#historyList *,
+.draft-set,
+.draft-set * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#historyList input,
+#historyList textarea,
+#historyList select {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Ya no hay botones incrustados en la tarjeta */
+#historyList details.day .day-actions,
+#historyList details.day.actions-open .day-actions {
+  display: none;
+}
+
+#historyList details.day.long-pressing {
+  outline: 1px dotted var(--nt-black);
+  outline-offset: -5px;
+  box-shadow: var(--nt-bevel-pressed);
+}
+
+/* Popup NT */
+.action-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0,0,0,.46);
+}
+
+.action-backdrop.active {
+  display: flex;
+}
+
+.action-modal {
+  width: min(360px, calc(100vw - 34px));
+  background: var(--nt-panel);
+  color: var(--nt-black);
+  border: 1px solid var(--nt-black);
+  border-radius: 0;
+  box-shadow:
+    inset 1px 1px 0 var(--nt-white),
+    inset -1px -1px 0 var(--nt-shadow),
+    0 18px 42px rgba(0,0,0,.36);
+  overflow: hidden;
+}
+
+.action-title {
+  padding: 9px 10px;
+  background: linear-gradient(90deg, var(--nt-teal-dark) 0%, var(--nt-teal) 100%);
+  color: #ffffff;
+  border-bottom: 1px solid var(--nt-black);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.action-text {
+  padding: 12px 10px 4px;
+  color: var(--nt-black);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.action-buttons {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.action-buttons .btn {
+  width: 100%;
+}
+
 </style>
 </head>
 <body>
@@ -1438,7 +1565,20 @@ details.history-day .btn {
     </div>
   </nav>
 
-  <div id="toast" class="toast"></div>
+  
+<div class="action-backdrop" id="historyActionBackdrop" aria-hidden="true">
+  <div class="action-modal" role="dialog" aria-modal="true" aria-labelledby="historyActionTitle">
+    <div class="action-title" id="historyActionTitle">Entrenamiento</div>
+    <div class="action-text" id="historyActionText">¿Qué quieres hacer?</div>
+    <div class="action-buttons">
+      <button class="btn secondary" type="button" id="historyActionEdit">Editar nombre</button>
+      <button class="btn danger" type="button" id="historyActionDelete">Borrar</button>
+      <button class="btn secondary" type="button" id="historyActionCancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
 
   <div id="setupModal" class="setup-modal" aria-modal="true" role="dialog">
     <div class="setup-box">
@@ -1583,6 +1723,12 @@ details.history-day .btn {
       $('historyList').addEventListener('contextmenu', onHistoryContextMenu);
       $('historyList').addEventListener('click', suppressHistoryLongPressClick, true);
       $('historyList').addEventListener('click', onHistoryClick);
+      $('historyActionEdit').addEventListener('click', editSelectedHistoryDayName);
+      $('historyActionDelete').addEventListener('click', deleteSelectedHistoryDay);
+      $('historyActionCancel').addEventListener('click', closeHistoryActionPopup);
+      $('historyActionBackdrop').addEventListener('click', (event) => {
+        if (event.target.id === 'historyActionBackdrop') closeHistoryActionPopup();
+      });
 
       $('progressGroup').addEventListener('change', () => { renderProgressExerciseSelect(); renderChart(); });
       $('progressExercise').addEventListener('change', renderChart);
@@ -2585,10 +2731,7 @@ details.history-day .btn {
         details.innerHTML = `<summary><span class="day-title"><span class="name">${escapeHtml(getDayName(date))}</span><span class="date">${formatDateHuman(date)}</span></span><span class="hint">${rows.length} series · ${compact(volume)} kg</span></summary>
           <div class="day-body">
             <div class="hint">${escapeHtml(groups)}</div>
-            <div class="day-actions">
-              <button class="btn secondary small" type="button" data-history-action="rename-day" data-date="${escapeAttr(date)}">Editar nombre</button>
-              <button class="btn danger small" type="button" data-history-action="delete-day" data-date="${escapeAttr(date)}">Borrar día</button>
-            </div>
+            <div class="day-actions" aria-hidden="true"></div>
             ${renderDayExercises(rows)}
           </div>`;
         list.appendChild(details);
@@ -2641,26 +2784,45 @@ details.history-day .btn {
 
     let historyLongPressTimer = null;
     let historySuppressClickUntil = 0;
+    let selectedHistoryDayKey = null;
 
     function clearHistoryLongPress() {
       if (historyLongPressTimer) window.clearTimeout(historyLongPressTimer);
       historyLongPressTimer = null;
-      document.querySelectorAll('#historyList details.day.long-pressing, #historyList .history-card.long-pressing').forEach(el => el.classList.remove('long-pressing'));
+      document.querySelectorAll('#historyList details.day.long-pressing').forEach(el => el.classList.remove('long-pressing'));
     }
 
-    function closeHistoryActionsExcept(current) {
-      document.querySelectorAll('#historyList details.day.actions-open').forEach(el => {
-        if (el !== current) el.classList.remove('actions-open');
-      });
-    }
-
-    function openHistoryDayActions(dayEl) {
-      if (!dayEl) return;
-      closeHistoryActionsExcept(dayEl);
-      dayEl.open = true;
-      dayEl.classList.add('actions-open');
+    function openHistoryActionPopup(date) {
+      date = normalizeDate(date);
+      if (!date) return;
+      selectedHistoryDayKey = date;
+      $('historyActionTitle').textContent = getDayName(date);
+      $('historyActionText').textContent = formatDateHuman(date);
+      const backdrop = $('historyActionBackdrop');
+      backdrop.classList.add('active');
+      backdrop.setAttribute('aria-hidden', 'false');
       historySuppressClickUntil = Date.now() + 700;
-      toast('Opciones del entrenamiento');
+    }
+
+    function closeHistoryActionPopup() {
+      const backdrop = $('historyActionBackdrop');
+      backdrop.classList.remove('active');
+      backdrop.setAttribute('aria-hidden', 'true');
+      selectedHistoryDayKey = null;
+    }
+
+    function editSelectedHistoryDayName() {
+      const date = selectedHistoryDayKey;
+      closeHistoryActionPopup();
+      if (!date) return;
+      renameWorkoutDay(date);
+    }
+
+    function deleteSelectedHistoryDay() {
+      const date = selectedHistoryDayKey;
+      closeHistoryActionPopup();
+      if (!date) return;
+      deleteWorkoutDay(date);
     }
 
     function onHistoryPointerDown(event) {
@@ -2668,19 +2830,29 @@ details.history-day .btn {
       const dayEl = event.target.closest('#historyList details.day');
       if (!dayEl) return;
       if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+      event.preventDefault();
+
+      const date = dayEl.dataset.day;
+      if (!date) return;
+
       clearHistoryLongPress();
       dayEl.classList.add('long-pressing');
+
       historyLongPressTimer = window.setTimeout(() => {
         clearHistoryLongPress();
-        openHistoryDayActions(dayEl);
+        openHistoryActionPopup(date);
       }, 650);
     }
 
     function onHistoryContextMenu(event) {
       const dayEl = event.target.closest('#historyList details.day');
       if (!dayEl) return;
+      const date = dayEl.dataset.day;
+      if (!date) return;
       event.preventDefault();
-      openHistoryDayActions(dayEl);
+      clearHistoryLongPress();
+      openHistoryActionPopup(date);
     }
 
     function suppressHistoryLongPressClick(event) {
