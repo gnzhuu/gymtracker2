@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <title>Gon v20</title>
+  <title>GymTracker</title>
   <style>
     :root {
       --bg: #070a12;
@@ -187,10 +187,11 @@
     .heatmap-arrow { width: 34px; height: 34px; border-radius: 13px; border: 1px solid var(--line); background: rgba(255,255,255,.07); color: var(--text); font-size: 20px; font-weight: 950; display: grid; place-items: center; touch-action: manipulation; }
     .heatmap-scroll { --heat-cell: 10px; --heat-gap: 3px; width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 3px 0 6px; overscroll-behavior-x: contain; }
     .heatmap-scroll::-webkit-scrollbar { display: none; }
-    .heatmap-months { width: max-content; min-width: 100%; display: grid; grid-template-columns: repeat(var(--heat-weeks, 53), var(--heat-cell)); column-gap: var(--heat-gap); color: var(--muted); font-size: 10px; font-weight: 900; margin: 8px 0 6px; padding-left: 1px; }
+    .heatmap-months { width: max-content; min-width: max-content; display: grid; grid-template-columns: repeat(var(--heat-weeks, 53), var(--heat-cell)); column-gap: var(--heat-gap); color: var(--muted); font-size: 10px; font-weight: 900; margin: 8px 0 6px; padding-left: 1px; }
     .heatmap-months span { min-width: 0; overflow: visible; white-space: nowrap; text-align: left; }
-    .heatmap-grid { width: max-content; min-width: 100%; display: grid; grid-template-columns: repeat(var(--heat-weeks, 53), var(--heat-cell)); grid-template-rows: repeat(7, var(--heat-cell)); grid-auto-flow: column; gap: var(--heat-gap); }
-    .heat-dot { width: var(--heat-cell); height: var(--heat-cell); flex: 0 0 auto; border-radius: 3px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.045); }
+    .heatmap-grid { width: max-content; min-width: max-content; display: flex; align-items: flex-start; gap: var(--heat-gap); }
+    .heat-week { display: grid; grid-template-rows: repeat(7, var(--heat-cell)); gap: var(--heat-gap); flex: 0 0 var(--heat-cell); }
+    .heat-dot { width: var(--heat-cell); height: var(--heat-cell); flex: 0 0 auto; border-radius: 3px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.045); box-sizing: border-box; }
     .heat-dot.blank { visibility: hidden; }
     .heat-dot.l1 { background: rgba(125,211,252,.38); border-color: rgba(125,211,252,.10); }
     .heat-dot.l2 { background: rgba(125,211,252,.58); border-color: rgba(125,211,252,.18); }
@@ -1432,16 +1433,21 @@
       const scroller = document.querySelector('.heatmap-scroll');
       if (!grid || !months) return;
 
-      const year = Number(state.heatmapYear || todayISO().slice(0, 4));
+      const todayIso = todayISO();
+      const currentYear = Number(todayIso.slice(0, 4));
+      const year = Number(state.heatmapYear || currentYear);
       state.heatmapYear = year;
       $('heatYear').textContent = String(year);
 
-      const currentYear = Number(todayISO().slice(0, 4));
-      const today = new Date();
       const first = new Date(year, 0, 1);
       const daysInYear = new Date(year, 12, 0).getDate();
-      const todayDayOfYear = year === currentYear ? Math.floor((new Date(today.getFullYear(), today.getMonth(), today.getDate()) - first) / 86400000) + 1 : daysInYear;
-      const daysToRender = year < currentYear ? daysInYear : year === currentYear ? Math.max(1, Math.min(daysInYear, todayDayOfYear)) : 0;
+      const todayParts = todayIso.split('-').map(Number);
+      const todayLocal = new Date(todayParts[0], todayParts[1] - 1, todayParts[2]);
+      const todayDayOfYear = year === currentYear ? Math.floor((todayLocal - first) / 86400000) + 1 : daysInYear;
+      // Pinta el año completo en años pasados y en el año actual.
+      // Así nunca se queda cortado en febrero; el scroll te lleva a la zona de hoy.
+      let daysToRender = year <= currentYear ? daysInYear : 0;
+      daysToRender = Math.max(0, Math.min(daysInYear, daysToRender));
 
       const counts = {};
       state.logs.forEach(row => {
@@ -1450,18 +1456,19 @@
       });
 
       const visibleDates = Object.keys(counts).filter(date => {
-        const d = new Date(date + 'T00:00:00');
+        const parts = date.split('-').map(Number);
+        if (parts.length !== 3 || parts.some(Number.isNaN)) return false;
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
         const dayOfYear = Math.floor((d - first) / 86400000) + 1;
-        return dayOfYear >= 1 && dayOfYear <= Math.max(daysToRender, 0);
+        return dayOfYear >= 1 && dayOfYear <= daysToRender;
       });
       const trainedDays = visibleDates.length;
       const totalSets = visibleDates.reduce((sum, date) => sum + Number(counts[date] || 0), 0);
       $('heatStats').textContent = `${trainedDays} día${trainedDays === 1 ? '' : 's'} entrenado${trainedDays === 1 ? '' : 's'} · ${totalSets} series`;
 
       const startOffset = (first.getDay() + 6) % 7; // lunes arriba
-      const totalCells = startOffset + Math.max(daysToRender, 0);
-      const weekCount = Math.max(1, Math.ceil(totalCells / 7));
-      const paddedCells = weekCount * 7;
+      const totalCells = startOffset + daysToRender;
+      const weekCount = Math.max(1, Math.ceil(Math.max(totalCells, 1) / 7));
 
       grid.style.setProperty('--heat-weeks', weekCount);
       months.style.setProperty('--heat-weeks', weekCount);
@@ -1482,26 +1489,31 @@
         return `<span style="grid-column:${startWeek} / span ${Math.max(1, endWeek - startWeek + 1)}">${m}</span>`;
       }).join('');
 
-      const cells = [];
-      for (let i = 0; i < startOffset; i++) cells.push('<span class="heat-dot blank"></span>');
-
+      const weeks = Array.from({ length: weekCount }, () => Array(7).fill('<span class="heat-dot blank"></span>'));
       for (let day = 1; day <= daysToRender; day++) {
+        const cellIndex = startOffset + day - 1;
+        const weekIndex = Math.floor(cellIndex / 7);
+        const rowIndex = cellIndex % 7;
         const d = new Date(year, 0, day);
         const iso = localISODate(d);
         const count = counts[iso] || 0;
         const level = count >= 16 ? 4 : count >= 10 ? 3 : count >= 5 ? 2 : count >= 1 ? 1 : 0;
         const title = `${formatDateHuman(iso)} · ${count} serie${count === 1 ? '' : 's'}`;
-        cells.push(`<span class="heat-dot ${level ? `l${level}` : ''}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}"></span>`);
+        weeks[weekIndex][rowIndex] = `<span class="heat-dot ${level ? `l${level}` : ''}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}"></span>`;
       }
+      grid.innerHTML = weeks.map(week => `<div class="heat-week">${week.join('')}</div>`).join('');
 
-      for (let i = totalCells; i < paddedCells; i++) cells.push('<span class="heat-dot blank"></span>');
-      grid.innerHTML = cells.join('');
-
-      // En el año actual, déjalo desplazado al final para ver la zona reciente.
-      // En años pasados, empieza al principio.
       requestAnimationFrame(() => {
         if (!scroller) return;
-        scroller.scrollLeft = year === currentYear ? scroller.scrollWidth : 0;
+        if (year === currentYear && grid.children.length) {
+          const startOffsetForToday = (first.getDay() + 6) % 7;
+          const todayCell = startOffsetForToday + Math.max(1, Math.min(daysInYear, todayDayOfYear)) - 1;
+          const todayWeek = Math.max(0, Math.floor(todayCell / 7));
+          const target = grid.children[todayWeek];
+          scroller.scrollLeft = target ? Math.max(0, target.offsetLeft - scroller.clientWidth + 80) : 0;
+        } else {
+          scroller.scrollLeft = 0;
+        }
       });
     }
 
