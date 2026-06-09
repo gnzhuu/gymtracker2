@@ -1,36 +1,22 @@
-# Gon — Gym Tracker v25
+# GymTracker — Terminal UI v26
 
-App móvil tipo PWA para registrar entrenamientos de fuerza con Google Sheets como base de datos central.
+Versión visual tipo terminal/consola para GitHub Pages.
 
-## Qué cambia en v25
+## Subir a GitHub Pages
 
-- Google Sheets pasa a ser la fuente de verdad de datos.
-- Al abrir/recargar/volver a la app, sincroniza automáticamente si hay internet.
-- Si estás en medio de un ejercicio, el borrador se autoguarda y no se pisa al sincronizar.
-- `Actualizar app` queda solo para actualizar código/cache.
-- `Sincronizar ahora` y `Recargar datos de Sheets` actualizan datos.
-- `Reset local y recargar` limpia la copia local del dispositivo y reconstruye desde Sheets.
-
-## Qué subir a GitHub Pages
-
-Sube a la raíz del repo:
+Reemplaza en la raíz del repo:
 
 - `index.html`
 - `sw.js`
 - `manifest.webmanifest`
 - `icon.svg`
 
-## Apps Script
+No hace falta tocar Apps Script para esta versión si ya tienes el backend de la v19 o posterior funcionando.
 
-Si ya tienes el backend v18 instalado, esta v25 no debería requerir cambiar la URL. Aun así, el ZIP incluye `appscript/Code.gs` actualizado.
+## Actualizar en el móvil
 
-Para actualizar Apps Script sin cambiar URL:
+Abre la app y pulsa:
 
-1. Pega `appscript/Code.gs` en Apps Script.
-2. Guarda.
-3. Implementar → Gestionar implementaciones.
-4. Edita la Web App actual.
-5. Versión: Nueva versión.
-6. Implementar.
+`Ajustes → Actualizar app`
 
-No uses “Nueva implementación” salvo que quieras una URL nueva.
+Esta versión solo cambia la apariencia, no cambia la base de datos.
