@@ -1,8 +1,8 @@
-# Gon — Gym Tracker v20
+# Gon — Gym Tracker v21
 
 App móvil tipo PWA para registrar entrenamientos de fuerza con Google Sheets como base de datos central.
 
-## Qué cambia en v20
+## Qué cambia en v21
 
 - Google Sheets pasa a ser la fuente de verdad de datos.
 - Al abrir/recargar/volver a la app, sincroniza automáticamente si hay internet.
@@ -22,7 +22,7 @@ Sube a la raíz del repo:
 
 ## Apps Script
 
-Si ya tienes el backend v18 instalado, esta v20 no debería requerir cambiar la URL. Aun así, el ZIP incluye `appscript/Code.gs` actualizado.
+Si ya tienes el backend v18 instalado, esta v21 no debería requerir cambiar la URL. Aun así, el ZIP incluye `appscript/Code.gs` actualizado.
 
 Para actualizar Apps Script sin cambiar URL:
 
