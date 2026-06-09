@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gym-tracker-v44-no-local-db-offline-queue';
+const CACHE_NAME = 'gym-tracker-v45-pro-sync-tombstones';
 const APP_SHELL = [
   './',
   './index.html',

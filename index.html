@@ -1616,7 +1616,8 @@ details.history-day .btn {
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
-    const APP_VERSION = 'v20';
+    const APP_VERSION = 'v21-pro-sync';
+    const MAX_JSONP_URL_LENGTH = 7600;
 
     const DEFAULT_EXERCISES = {
       'Pecho': ['Press banca', 'Press inclinado mancuerna', 'Aperturas', 'Fondos'],
@@ -1635,7 +1636,9 @@ details.history-day .btn {
       pendingDayNames: 'gymtracker_pending_day_names_v1',
       pendingDeletes: 'gymtracker_pending_deletes_v1',
       pendingExerciseDeletes: 'gymtracker_pending_exercise_deletes_v1',
-      lastSyncAt: 'gymtracker_last_sync_at_v1'
+      lastSyncAt: 'gymtracker_last_sync_at_v1',
+      selectedGroup: 'gymtracker_selected_group_ui_v1',
+      globalDate: 'gymtracker_global_date_ui_v1'
     };
 
     // Claves antiguas que se usaban como copia local completa. Ya no se usan.
@@ -1658,7 +1661,7 @@ details.history-day .btn {
 
     const state = {
       screen: 'home',
-      selectedGroup: 'Pecho',
+      selectedGroup: localStorage.getItem(LS.selectedGroup) || 'Pecho',
       selectedExercise: '',
       historyMode: 'days',
       heatmapYear: Number(todayISO().slice(0, 4)),
@@ -1678,6 +1681,8 @@ details.history-day .btn {
       draft: null,
       syncing: false,
       bootstrapping: false,
+      syncPromise: null,
+      syncAgain: false,
       lastAutoSyncAt: 0
     };
 
@@ -1692,7 +1697,7 @@ details.history-day .btn {
 
     function init() {
       clearFullLocalCopies();
-      const startDate = todayISO();
+      const startDate = localStorage.getItem(LS.globalDate) || todayISO();
       $('globalDate').value = startDate;
       $('todayText').textContent = formatDateHuman(startDate);
       bindEvents();
@@ -1800,19 +1805,39 @@ details.history-day .btn {
             openSetupModal();
             toast('Introduce la contraseña');
           } else {
-            toast('Sin conexión. Solo cola offline pendiente');
+            toast('Sin conexión. Cola offline activa');
           }
         }
         return Promise.resolve(false);
       }
 
-      if (state.bootstrapping) return Promise.resolve(false);
+      if (state.syncPromise) {
+        state.syncAgain = true;
+        if (manual) renderSyncStatus('Sincronización en cola…');
+        return state.syncPromise;
+      }
+
+      state.syncPromise = runSyncCycle({ manual, forceReload })
+        .finally(() => {
+          state.syncPromise = null;
+          if (state.syncAgain) {
+            state.syncAgain = false;
+            window.setTimeout(() => syncData({ reason: 'queued-after-change', forceReload: true }), 30);
+          }
+        });
+
+      return state.syncPromise;
+    }
+
+    function runSyncCycle({ manual = false, forceReload = false } = {}) {
+      state.syncing = true;
       state.bootstrapping = true;
       renderSyncStatus(manual ? 'Sincronizando datos…' : 'Actualizando datos…');
 
-      return syncPending(false, { skipBootstrap: true })
-        .then(() => bootstrapFromServer({ silent: !manual && !forceReload }))
+      return commitPendingChanges()
+        .then(() => bootstrapFromServer({ silent: true }))
         .then(ok => {
+          state.syncing = false;
           state.bootstrapping = false;
           renderAll();
           if (manual) toast(ok ? 'Datos actualizados' : 'No se pudo actualizar');
@@ -1820,9 +1845,11 @@ details.history-day .btn {
         })
         .catch(err => {
           console.warn(err);
+          state.syncing = false;
           state.bootstrapping = false;
+          saveLocal();
           renderAll();
-          if (manual) toast('Error al actualizar datos');
+          if (manual) toast(err && err.message ? err.message : 'Error al actualizar datos');
           return false;
         });
     }
@@ -1851,7 +1878,7 @@ details.history-day .btn {
             if (!silent) toast('Datos recargados de Sheets');
             return true;
           }
-          throw new Error('Respuesta inválida');
+          throw new Error(data && data.error ? data.error : 'Respuesta inválida');
         })
         .catch(err => {
           console.warn(err);
@@ -1895,6 +1922,7 @@ details.history-day .btn {
 
     function persistDate() {
       const date = $('globalDate').value || todayISO();
+      localStorage.setItem(LS.globalDate, date);
       $('todayText').textContent = formatDateHuman(date);
     }
 
@@ -2208,153 +2236,155 @@ details.history-day .btn {
     }
 
     function syncPending(manual = false, options = {}) {
-      if (state.syncing) return Promise.resolve(false);
-      if (!hasServer() || !hasApiToken() || !navigator.onLine) {
+      return syncData({ manual, reason: 'pending-compat', forceReload: !options.skipBootstrap });
+    }
+
+    function commitPendingChanges() {
+      const snapshot = makePendingSnapshot();
+      if (!snapshotHasChanges(snapshot)) {
+        saveLocal();
         renderSyncStatus();
-        if (manual) {
-          if (!hasApiToken()) {
-            openSetupModal();
-            toast('Introduce la contraseña');
-          } else {
-            toast('Ahora mismo no puedo sincronizar');
-          }
-        }
-        return Promise.resolve(false);
+        return Promise.resolve({ ok: true, syncedCount: 0 });
       }
 
-      const pendingLogs = state.logs.filter(x => x.syncStatus !== 'synced');
-      const pendingExercises = [...state.pendingExercises];
-      const pendingDayNames = [...state.pendingDayNames];
-      const pendingDeletes = [...state.pendingDeletes];
-      const pendingExerciseDeletes = [...state.pendingExerciseDeletes];
-      if (!pendingLogs.length && !pendingExercises.length && !pendingDayNames.length && !pendingDeletes.length && !pendingExerciseDeletes.length) {
-        renderSyncStatus();
-        if (manual) toast('Todo sincronizado');
-        return Promise.resolve({ syncedCount: 0 });
-      }
-
-      state.syncing = true;
-      renderSyncStatus('Sincronizando…');
-
-      return syncDeletesSequential(pendingDeletes)
-        .then(() => syncExerciseDeletesSequential(pendingExerciseDeletes))
-        .then(() => syncDayNamesSequential(pendingDayNames))
-        .then(() => syncExercisesSequential(pendingExercises))
-        .then(() => syncLogs(pendingLogs))
-        .then(result => {
-          state.syncing = false;
-          saveLocal();
-          renderAll();
-          if (!options.skipBootstrap) {
-            return bootstrapFromServer({ silent: !manual }).then(() => result);
-          }
-          if (manual || (result && result.syncedCount)) toast('Sincronizado');
-          return result;
-        })
-        .catch(err => {
-          console.warn(err);
-          state.syncing = false;
-          pendingLogs.forEach(x => { if (x.syncStatus !== 'synced') x.syncStatus = 'pending'; });
-          saveLocal();
-          renderAll();
-          if (manual) toast('Error al sincronizar');
-          return false;
-        });
-    }
-
-
-    function syncDeletesSequential(items) {
-      if (!items.length) return Promise.resolve();
-      let chain = Promise.resolve();
-      unique(items.map(x => normalizeDate(typeof x === 'string' ? x : x.date))).filter(Boolean).forEach(date => {
-        chain = chain.then(() => callApi('deleteDay', { date })
-          .then((data) => {
-            const confirmedDate = normalizeDate(data && data.deletedDate);
-            const hasDeleteCounters = data && (
-              Object.prototype.hasOwnProperty.call(data, 'deletedLogs') ||
-              Object.prototype.hasOwnProperty.call(data, 'deletedDayNames')
-            );
-            if (confirmedDate !== date || !hasDeleteCounters) {
-              throw new Error('Apps Script no confirmó deleteDay. Actualiza Code.gs.');
-            }
-
-            removeLocalDay(date);
-            state.pendingDeletes = state.pendingDeletes.filter(x => normalizeDate(typeof x === 'string' ? x : x.date) !== date);
-          })
-        );
-      });
-      return chain;
-    }
-
-
-    function syncExerciseDeletesSequential(items) {
-      if (!items.length) return Promise.resolve();
-      let chain = Promise.resolve();
-      const uniqueItems = [];
-      items.forEach(item => {
-        if (!item || !item.group || !item.exercise) return;
-        if (!uniqueItems.some(x => norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise))) uniqueItems.push(item);
-      });
-      uniqueItems.forEach(item => {
-        chain = chain.then(() => callApi('deleteExercise', { group: item.group, exercise: item.exercise })
-          .then(() => {
-            state.pendingExerciseDeletes = state.pendingExerciseDeletes.filter(x => !(norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise)));
-          })
-        );
-      });
-      return chain;
-    }
-
-    function syncDayNamesSequential(items) {
-      if (!items.length) return Promise.resolve();
-      let chain = Promise.resolve();
-      const latest = {};
-      items.forEach(item => { if (item && item.date) latest[item.date] = item.name || ''; });
-      Object.keys(latest).forEach(date => {
-        chain = chain.then(() => callApi('saveDayName', { date, name: latest[date] })
-          .then(() => {
-            state.pendingDayNames = state.pendingDayNames.filter(x => x.date !== date);
-          })
-        );
-      });
-      return chain;
-    }
-
-    function syncExercisesSequential(items) {
-      if (!items.length) return Promise.resolve();
-      let chain = Promise.resolve();
-      items.forEach(item => {
-        chain = chain.then(() => callApi('saveExercise', { group: item.group, exercise: item.exercise })
-          .then(() => {
-            state.pendingExercises = state.pendingExercises.filter(x => !(norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise)));
-          })
-        );
-      });
-      return chain;
-    }
-
-    function syncLogs(pendingLogs) {
-      if (!pendingLogs.length) return Promise.resolve({ syncedCount: 0 });
-      pendingLogs.forEach(x => { if (x.syncStatus !== 'synced') x.syncStatus = 'pending'; });
-
-      let chain = Promise.resolve({ syncedCount: 0 });
-      pendingLogs.forEach(row => {
-        chain = chain.then(result => callApi('syncEntry', { payload: JSON.stringify(row) })
+      const batches = buildSyncBatches(snapshot);
+      let chain = Promise.resolve({ ok: true, syncedCount: 0 });
+      batches.forEach(batch => {
+        chain = chain.then(total => callApi('syncBatch', { payload: JSON.stringify(batch) })
           .then(res => {
-            if (res && res.ok) {
-              state.logs.forEach(log => {
-                if (log.id === row.id) {
-                  log.syncStatus = 'synced';
-                  log.syncedAt = new Date().toISOString();
-                }
-              });
-              result.syncedCount += 1;
-            }
-            return result;
+            if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'Error de sincronización');
+            applySyncAck(batch, res);
+            total.syncedCount += Number(res.syncedCount || 0);
+            return total;
           })
         );
       });
-      return chain;
+      return chain.then(result => {
+        saveLocal();
+        return result;
+      });
+    }
+
+    function makePendingSnapshot() {
+      const deletedDates = getPendingDeletedDateSet();
+      const pendingLogs = state.logs
+        .filter(row => String(row.syncStatus || 'synced') !== 'synced')
+        .filter(row => !deletedDates.has(normalizeDate(row.fecha)));
+
+      const latestDayNames = {};
+      state.pendingDayNames.forEach(item => {
+        const date = normalizeDate(item && item.date);
+        if (!date || deletedDates.has(date)) return;
+        latestDayNames[date] = { date, name: item.name || '', updatedAt: item.updatedAt || new Date().toISOString() };
+      });
+
+      return {
+        entries: dedupeBy(pendingLogs, row => String(row.id || '')),
+        exercises: dedupeBy(state.pendingExercises || [], item => `${norm(item.group)}|${norm(item.exercise)}`),
+        exerciseDeletes: dedupeBy(state.pendingExerciseDeletes || [], item => `${norm(item.group)}|${norm(item.exercise)}`),
+        dayNames: Object.values(latestDayNames),
+        deletedDays: Array.from(deletedDates).map(date => {
+          const item = (state.pendingDeletes || []).find(x => normalizeDate(typeof x === 'string' ? x : x.date) === date) || {};
+          return { date, deletedAt: item.deletedAt || new Date().toISOString() };
+        })
+      };
+    }
+
+    function snapshotHasChanges(snapshot) {
+      return Boolean(
+        snapshot.entries.length ||
+        snapshot.exercises.length ||
+        snapshot.exerciseDeletes.length ||
+        snapshot.dayNames.length ||
+        snapshot.deletedDays.length
+      );
+    }
+
+    function buildSyncBatches(snapshot) {
+      const batches = [];
+      const firstBase = {
+        deletedDays: snapshot.deletedDays,
+        exerciseDeletes: snapshot.exerciseDeletes,
+        dayNames: snapshot.dayNames,
+        exercises: snapshot.exercises,
+        entries: []
+      };
+
+      if (!snapshot.entries.length) return [firstBase];
+
+      let baseForNextBatch = firstBase;
+      let current = { ...baseForNextBatch, entries: [] };
+      snapshot.entries.forEach(entry => {
+        const candidate = { ...current, entries: current.entries.concat([entry]) };
+        if (estimateApiUrlLength('syncBatch', { payload: JSON.stringify(candidate) }) > MAX_JSONP_URL_LENGTH && current.entries.length) {
+          batches.push(current);
+          baseForNextBatch = { deletedDays: [], exerciseDeletes: [], dayNames: [], exercises: [], entries: [] };
+          current = { ...baseForNextBatch, entries: [entry] };
+        } else {
+          current = candidate;
+        }
+      });
+      batches.push(current);
+      return batches;
+    }
+
+    function applySyncAck(batch, res) {
+      const applied = res.applied || {};
+      const appliedDeletedDays = new Set((applied.deletedDays || batch.deletedDays.map(x => x.date)).map(normalizeDate).filter(Boolean));
+      appliedDeletedDays.forEach(date => {
+        removeLocalDay(date);
+        state.pendingDeletes = state.pendingDeletes.filter(x => normalizeDate(typeof x === 'string' ? x : x.date) !== date);
+      });
+
+      const appliedDayNames = new Set((applied.dayNames || batch.dayNames.map(x => x.date)).map(normalizeDate).filter(Boolean));
+      state.pendingDayNames = state.pendingDayNames.filter(item => !appliedDayNames.has(normalizeDate(item.date)));
+
+      (applied.exercises || batch.exercises || []).forEach(item => {
+        state.pendingExercises = state.pendingExercises.filter(x => !(norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise)));
+      });
+
+      (applied.exerciseDeletes || batch.exerciseDeletes || []).forEach(item => {
+        state.pendingExerciseDeletes = state.pendingExerciseDeletes.filter(x => !(norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise)));
+      });
+
+      const syncedIds = new Set([...(res.syncedIds || []), ...(res.skippedIds || [])].map(String));
+      const skippedDeletedIds = new Set((res.skippedDeletedIds || []).map(String));
+      if (skippedDeletedIds.size) {
+        state.logs = state.logs.filter(row => !skippedDeletedIds.has(String(row.id)));
+      }
+      state.logs.forEach(row => {
+        if (syncedIds.has(String(row.id))) {
+          row.syncStatus = 'synced';
+          row.syncedAt = new Date().toISOString();
+        }
+      });
+    }
+
+    function estimateApiUrlLength(action, params = {}) {
+      try {
+        const url = new URL(API_URL);
+        url.searchParams.set('action', action);
+        url.searchParams.set('callback', 'gymCb_x');
+        url.searchParams.set('token', state.apiToken || 'x');
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+        });
+        return url.toString().length;
+      } catch (e) {
+        return JSON.stringify(params || {}).length;
+      }
+    }
+
+    function dedupeBy(list, keyFn) {
+      const seen = new Set();
+      const out = [];
+      (list || []).forEach(item => {
+        const key = keyFn(item || {});
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        out.push(item);
+      });
+      return out;
     }
 
     function callApi(action, params = {}) {
@@ -2365,7 +2395,7 @@ details.history-day .btn {
         const timeout = window.setTimeout(() => {
           cleanup();
           reject(new Error('Timeout de API'));
-        }, 15000);
+        }, 30000);
 
         function cleanup() {
           window.clearTimeout(timeout);
@@ -2384,12 +2414,20 @@ details.history-day .btn {
         url.searchParams.set('action', action);
         url.searchParams.set('callback', callbackName);
         url.searchParams.set('token', state.apiToken);
+        url.searchParams.set('_ts', String(Date.now()));
         Object.entries(params).forEach(([key, value]) => {
           if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
         });
 
+        if (url.toString().length > 14500) {
+          cleanup();
+          reject(new Error('Hay demasiados cambios pendientes para una sola llamada. Sincroniza en tandas más pequeñas.'));
+          return;
+        }
+
         const script = document.createElement('script');
         script.id = callbackName;
+        script.async = true;
         script.src = url.toString();
         script.onerror = () => { cleanup(); reject(new Error('No se pudo llamar a la API')); };
         document.body.appendChild(script);
@@ -2541,6 +2579,7 @@ details.history-day .btn {
 
     function renderSession() {
       const date = $('globalDate').value || todayISO();
+      localStorage.setItem(LS.globalDate, date);
       $('todayText').textContent = formatDateHuman(date);
       const rows = getRowsForDate(date);
       const volume = rows.reduce((s, x) => s + Number(x.kg || 0) * Number(x.reps || 0), 0);
