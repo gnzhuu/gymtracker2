@@ -1,13 +1,7 @@
-# GymTracker v30 — Reference Console UI
+# GymTracker v32 — Claro NT
 
-Hecha partiendo de la v25.
-
-Visual inspirado en las capturas:
-- cabecera con barra cyan
-- tarjetas oscuras con borde fino
-- títulos tipo terminal
-- barra inferior /train /cal /stats /lib /cfg
-- sin botón central +
+Versión hecha desde la v25 con piel visual inspirada en el tema claro NT:
+gris frío, biseles clásicos, bordes negros y acento turquesa.
 
 Sube a GitHub Pages:
 - index.html
