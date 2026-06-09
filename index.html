@@ -866,6 +866,325 @@ select option {
   }
 }
 
+
+
+/* ===========================================================
+   v36 — NT claro con fondo B (#232629) + arreglo Histórico
+   =========================================================== */
+
+/* Fondo elegido: opción B */
+html {
+  background: #232629;
+}
+
+body {
+  background: #232629;
+}
+
+.app {
+  background: transparent;
+}
+
+/* Histórico: asegurar que cada día sea una tarjeta visible sobre fondo oscuro */
+#historyList,
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+#historyList .history-day,
+.history-list .history-day,
+details.history-day {
+  display: block;
+  background: var(--nt-panel-light);
+  color: var(--nt-black);
+  border: 1px solid var(--nt-black);
+  border-left: 4px solid var(--nt-teal);
+  border-radius: 0;
+  box-shadow: var(--nt-bevel);
+  margin: 0 0 10px 0;
+  overflow: hidden;
+}
+
+/* Cabecera del día */
+#historyList .history-day summary,
+.history-list .history-day summary,
+details.history-day summary {
+  background: var(--nt-panel);
+  color: var(--nt-black);
+  border-bottom: 1px solid var(--nt-shadow);
+  padding: 10px;
+  font-weight: 700;
+  list-style: none;
+}
+
+#historyList .history-day summary::-webkit-details-marker,
+.history-list .history-day summary::-webkit-details-marker,
+details.history-day summary::-webkit-details-marker {
+  display: none;
+}
+
+#historyList .history-day summary strong,
+#historyList .history-day summary span,
+.history-list .history-day summary strong,
+.history-list .history-day summary span,
+details.history-day summary strong,
+details.history-day summary span {
+  color: var(--nt-black);
+}
+
+/* Cuerpo del día */
+#historyList .history-body,
+.history-list .history-body,
+details.history-day .history-body {
+  background: var(--nt-panel-light);
+  color: var(--nt-black);
+  padding: 10px;
+}
+
+#historyList .history-ex,
+.history-list .history-ex,
+details.history-day .history-ex {
+  background: var(--nt-panel-light);
+  color: var(--nt-black);
+  border-top: 1px solid var(--nt-shadow);
+  padding: 9px 0;
+}
+
+#historyList .history-ex:first-child,
+.history-list .history-ex:first-child,
+details.history-day .history-ex:first-child {
+  border-top: 0;
+}
+
+#historyList .history-ex h4,
+#historyList .sets-line,
+.history-list .history-ex h4,
+.history-list .sets-line,
+details.history-day .history-ex h4,
+details.history-day .sets-line {
+  color: var(--nt-black);
+}
+
+#historyList .sets-line,
+.history-list .sets-line,
+details.history-day .sets-line {
+  opacity: .82;
+}
+
+/* Los botones de acciones del histórico también deben verse dentro de la tarjeta */
+#historyList .history-day .btn,
+.history-list .history-day .btn,
+details.history-day .btn {
+  margin-top: 8px;
+}
+
+
+
+/* ===========================================================
+   v37 — Constancia estrictamente binaria
+   Nada hecho = apagado. Algo hecho = máximo.
+   =========================================================== */
+
+.heat-legend-dots.binary {
+  gap: 8px;
+}
+
+.heat-legend-dots.binary .heat-dot {
+  width: 10px;
+  height: 10px;
+}
+
+/* Si alguna clase intermedia quedara en caché/datos, se fuerza al mismo estado activo */
+.heat-dot.l1,
+.heat-dot.l2,
+.heat-dot.l3,
+.heat-cell.l1,
+.heat-cell.l2,
+.heat-cell.l3 {
+  background: var(--nt-teal);
+  border-color: var(--nt-black);
+  box-shadow: none;
+}
+
+
+
+/* ===========================================================
+   v38 — Histórico visible de verdad
+   Los entrenamientos que aparecen abajo usan details.day,
+   history-card, session-card y day-exercise; no history-day.
+   =========================================================== */
+
+#historyList {
+  display: grid;
+  gap: 10px;
+}
+
+/* Tarjeta principal de cada día en Histórico > Por días */
+#historyList details.day {
+  display: block;
+  background: var(--nt-panel-light);
+  color: var(--nt-black);
+  border: 1px solid var(--nt-black);
+  border-left: 4px solid var(--nt-teal);
+  border-radius: 0;
+  box-shadow: var(--nt-bevel);
+  margin: 0 0 10px 0;
+  overflow: hidden;
+}
+
+/* Cabecera del día */
+#historyList details.day > summary {
+  background: var(--nt-panel);
+  color: var(--nt-black);
+  border-bottom: 1px solid var(--nt-shadow);
+  padding: 10px;
+  list-style: none;
+  font-weight: 700;
+}
+
+#historyList details.day > summary::-webkit-details-marker {
+  display: none;
+}
+
+#historyList .day-title,
+#historyList .day-title .name,
+#historyList .day-title .date,
+#historyList details.day > summary span,
+#historyList details.day > summary strong,
+#historyList details.day > summary .hint {
+  color: var(--nt-black);
+}
+
+/* Cuerpo desplegado */
+#historyList .day-body {
+  background: var(--nt-panel-light);
+  color: var(--nt-black);
+  padding: 10px;
+}
+
+/* Cada entrenamiento/ejercicio dentro del día */
+#historyList .day-exercise {
+  background: var(--nt-paper);
+  color: var(--nt-black);
+  border: 1px solid var(--nt-shadow);
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 var(--nt-white), inset -1px -1px 0 var(--nt-shadow);
+  padding: 9px;
+  margin: 8px 0 0 0;
+}
+
+/* Vista Histórico > Por grupo */
+#historyList .history-card {
+  background: var(--nt-panel-light);
+  color: var(--nt-black);
+  border: 1px solid var(--nt-black);
+  border-left: 4px solid var(--nt-teal);
+  border-radius: 0;
+  box-shadow: var(--nt-bevel);
+  padding: 10px;
+  margin: 0 0 10px 0;
+}
+
+#historyList .history-card > .day-exercise {
+  background: var(--nt-paper);
+}
+
+/* Texto de líneas y etiquetas dentro del histórico */
+#historyList .line1,
+#historyList .line1 span,
+#historyList .line2,
+#historyList .line2 span,
+#historyList .sets-inline,
+#historyList .hint,
+#historyList .set-pill {
+  color: var(--nt-black);
+}
+
+#historyList .line2,
+#historyList .hint {
+  opacity: .82;
+}
+
+/* Pastillas de series */
+#historyList .set-pill {
+  background: var(--nt-panel);
+  border: 1px solid var(--nt-shadow);
+  border-radius: 0;
+  box-shadow: var(--nt-bevel);
+}
+
+/* También afecta a los mini históricos que aparecen abajo en entrenar/ejercicio */
+#sessionList .session-card,
+#currentExerciseToday .session-card,
+#exerciseHistoryMini .compact-history-day {
+  background: var(--nt-panel-light);
+  color: var(--nt-black);
+  border: 1px solid var(--nt-black);
+  border-left: 4px solid var(--nt-teal);
+  border-radius: 0;
+  box-shadow: var(--nt-bevel);
+}
+
+#sessionList .session-card *,
+#currentExerciseToday .session-card *,
+#exerciseHistoryMini .compact-history-day *,
+#sessionList .set-pill,
+#currentExerciseToday .set-pill,
+#exerciseHistoryMini .set-pill {
+  color: var(--nt-black);
+}
+
+#sessionList .set-pill,
+#currentExerciseToday .set-pill,
+#exerciseHistoryMini .set-pill {
+  background: var(--nt-panel);
+  border: 1px solid var(--nt-shadow);
+  border-radius: 0;
+  box-shadow: var(--nt-bevel);
+}
+
+
+
+/* ===========================================================
+   v39 — Acciones por pulsación larga
+   - Histórico: editar/borrar día aparece al mantener pulsado.
+   - Series en edición: quitar serie aparece como confirmación al mantener pulsado.
+   =========================================================== */
+
+/* Histórico: acciones ocultas hasta pulsación larga */
+#historyList details.day .day-actions {
+  display: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+#historyList details.day.actions-open .day-actions {
+  display: grid;
+}
+
+#historyList details.day.long-pressing,
+#historyList details.day.actions-open {
+  outline: 1px dotted var(--nt-black);
+  outline-offset: -5px;
+}
+
+/* Draft sets: sin botón visible de quitar, la tarjeta responde a pulsación larga */
+.draft-set.removable {
+  cursor: default;
+}
+
+.draft-set.removable .draft-head span {
+  opacity: .82;
+}
+
+.draft-set.long-pressing {
+  outline: 1px dotted var(--nt-black);
+  outline-offset: -5px;
+  box-shadow: var(--nt-bevel-pressed);
+}
+
 </style>
 </head>
 <body>
@@ -1009,11 +1328,11 @@ select option {
           <div id="heatGrid" class="heatmap-grid"></div>
         </div>
         <div class="heat-legend">
-          <span class="hint">Menos</span>
-          <div class="heat-legend-dots">
-            <span class="heat-dot"></span><span class="heat-dot l1"></span><span class="heat-dot l2"></span><span class="heat-dot l3"></span><span class="heat-dot l4"></span>
+          <span class="hint">Nada</span>
+          <div class="heat-legend-dots binary">
+            <span class="heat-dot"></span><span class="heat-dot l4"></span>
           </div>
-          <span class="hint">Más</span>
+          <span class="hint">Hecho</span>
         </div>
       </div>
 
@@ -1242,6 +1561,10 @@ select option {
       $('duplicateSetBtn').addEventListener('click', duplicateLastDraftSet);
       $('saveExerciseWorkoutBtn').addEventListener('click', saveDraftWorkout);
       $('draftSets').addEventListener('pointerdown', onDraftPointerDown);
+      $('draftSets').addEventListener('pointerup', clearDraftSetLongPress);
+      $('draftSets').addEventListener('pointercancel', clearDraftSetLongPress);
+      $('draftSets').addEventListener('pointerleave', clearDraftSetLongPress);
+      $('draftSets').addEventListener('contextmenu', onDraftSetContextMenu);
       $('draftSets').addEventListener('click', onDraftClick);
       $('draftSets').addEventListener('input', onDraftInput);
       $('draftSets').addEventListener('change', onDraftInput);
@@ -1253,6 +1576,12 @@ select option {
       $('heatPrevYear').addEventListener('click', () => { state.heatmapYear -= 1; renderTrainingHeatmap(); });
       $('heatNextYear').addEventListener('click', () => { state.heatmapYear += 1; renderTrainingHeatmap(); });
       $('refreshHistoryBtn').addEventListener('click', refreshHistoryFromServer);
+      $('historyList').addEventListener('pointerdown', onHistoryPointerDown);
+      $('historyList').addEventListener('pointerup', clearHistoryLongPress);
+      $('historyList').addEventListener('pointercancel', clearHistoryLongPress);
+      $('historyList').addEventListener('pointerleave', clearHistoryLongPress);
+      $('historyList').addEventListener('contextmenu', onHistoryContextMenu);
+      $('historyList').addEventListener('click', suppressHistoryLongPressClick, true);
       $('historyList').addEventListener('click', onHistoryClick);
 
       $('progressGroup').addEventListener('change', () => { renderProgressExerciseSelect(); renderChart(); });
@@ -1452,6 +1781,45 @@ select option {
       renderDraftSets();
     }
 
+    let draftSetLongPressTimer = null;
+
+    function clearDraftSetLongPress() {
+      if (draftSetLongPressTimer) window.clearTimeout(draftSetLongPressTimer);
+      draftSetLongPressTimer = null;
+      document.querySelectorAll('.draft-set.long-pressing').forEach(el => el.classList.remove('long-pressing'));
+    }
+
+    function confirmRemoveDraftSet(index) {
+      if (!state.draft) return;
+      if (state.draft.sets.length <= 1) {
+        toast('Debe quedar al menos 1 serie');
+        return;
+      }
+      const serie = index + 1;
+      const ok = window.confirm(`¿Quitar la serie ${serie}?`);
+      if (!ok) return;
+      removeDraftSet(index);
+      toast('Serie quitada');
+    }
+
+    function startDraftSetLongPress(setEl, index) {
+      clearDraftSetLongPress();
+      setEl.classList.add('long-pressing');
+      draftSetLongPressTimer = window.setTimeout(() => {
+        clearDraftSetLongPress();
+        confirmRemoveDraftSet(index);
+      }, 650);
+    }
+
+    function onDraftSetContextMenu(event) {
+      const setEl = event.target.closest('.draft-set');
+      if (!setEl || !state.draft) return;
+      const index = Number(setEl.dataset.draftSetIndex);
+      if (!Number.isFinite(index)) return;
+      event.preventDefault();
+      confirmRemoveDraftSet(index);
+    }
+
     function applyDraftStep(btn) {
       if (!btn || !state.draft) return;
       const index = Number(btn.dataset.index);
@@ -1472,9 +1840,22 @@ select option {
 
     function onDraftPointerDown(event) {
       const btn = event.target.closest('[data-step-action]');
-      if (!btn || !state.draft) return;
-      event.preventDefault();
-      applyDraftStep(btn);
+      if (btn && state.draft) {
+        event.preventDefault();
+        applyDraftStep(btn);
+        return;
+      }
+
+      const setEl = event.target.closest('.draft-set');
+      if (!setEl || !state.draft) return;
+      if (event.target.closest('input, textarea, select, button, summary, details')) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+      const index = Number(setEl.dataset.draftSetIndex);
+      if (!Number.isFinite(index)) return;
+      if (state.draft.sets.length <= 1) return;
+
+      startDraftSetLongPress(setEl, index);
     }
 
     function onDraftClick(event) {
@@ -1961,12 +2342,12 @@ select option {
       box.innerHTML = '';
       state.draft.sets.forEach((set, index) => {
         const div = document.createElement('div');
-        div.className = 'draft-set';
         const canRemove = state.draft.sets.length > 1;
+        div.className = `draft-set${canRemove ? ' removable' : ''}`;
+        div.dataset.draftSetIndex = String(index);
         div.innerHTML = `
           <div class="draft-head">
-            <div><strong>Serie ${baseSerie + index + 1}</strong><br><span>${escapeHtml(state.draft.exercise)}</span></div>
-            <button class="btn danger small" type="button" ${canRemove ? '' : 'disabled'} onclick="removeDraftSet(${index})">Quitar</button>
+            <div><strong>Serie ${baseSerie + index + 1}</strong><br><span>${escapeHtml(state.draft.exercise)}${canRemove ? ' · mantén pulsado para quitar' : ''}</span></div>
           </div>
           <div class="stepper-grid">
             ${stepperHtml(index, 'kg', 'Kg', set.kg, 2.5, 'decimal')}
@@ -2111,7 +2492,7 @@ select option {
       const trainedDates = Object.keys(counts).filter(date => date.startsWith(String(year)) && Number(counts[date] || 0) > 0);
       const trainedDays = trainedDates.length;
       const totalSets = trainedDates.reduce((sum, date) => sum + Number(counts[date] || 0), 0);
-      $('heatStats').textContent = `${trainedDays} día${trainedDays === 1 ? '' : 's'} entrenado${trainedDays === 1 ? '' : 's'} · ${totalSets} series`;
+      $('heatStats').textContent = `${trainedDays} día${trainedDays === 1 ? '' : 's'} entrenado${trainedDays === 1 ? '' : 's'}`;
 
       const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
       months.innerHTML = monthNames.map((m, idx) => {
@@ -2133,8 +2514,8 @@ select option {
           }
           const iso = localISODate(d);
           const count = counts[iso] || 0;
-          const level = count >= 16 ? 4 : count >= 10 ? 3 : count >= 5 ? 2 : count >= 1 ? 1 : 0;
-          const title = `${formatDateHuman(iso)} · ${count} serie${count === 1 ? '' : 's'}`;
+          const level = count >= 1 ? 4 : 0;
+          const title = count >= 1 ? `${formatDateHuman(iso)} · entrenado` : `${formatDateHuman(iso)} · sin entreno`;
           cells.push(`<span class="heat-dot ${level ? `l${level}` : ''}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}"></span>`);
         }
       }
@@ -2257,6 +2638,57 @@ select option {
       });
     }
 
+
+    let historyLongPressTimer = null;
+    let historySuppressClickUntil = 0;
+
+    function clearHistoryLongPress() {
+      if (historyLongPressTimer) window.clearTimeout(historyLongPressTimer);
+      historyLongPressTimer = null;
+      document.querySelectorAll('#historyList details.day.long-pressing, #historyList .history-card.long-pressing').forEach(el => el.classList.remove('long-pressing'));
+    }
+
+    function closeHistoryActionsExcept(current) {
+      document.querySelectorAll('#historyList details.day.actions-open').forEach(el => {
+        if (el !== current) el.classList.remove('actions-open');
+      });
+    }
+
+    function openHistoryDayActions(dayEl) {
+      if (!dayEl) return;
+      closeHistoryActionsExcept(dayEl);
+      dayEl.open = true;
+      dayEl.classList.add('actions-open');
+      historySuppressClickUntil = Date.now() + 700;
+      toast('Opciones del entrenamiento');
+    }
+
+    function onHistoryPointerDown(event) {
+      if (event.target.closest('button, input, select, textarea, a')) return;
+      const dayEl = event.target.closest('#historyList details.day');
+      if (!dayEl) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      clearHistoryLongPress();
+      dayEl.classList.add('long-pressing');
+      historyLongPressTimer = window.setTimeout(() => {
+        clearHistoryLongPress();
+        openHistoryDayActions(dayEl);
+      }, 650);
+    }
+
+    function onHistoryContextMenu(event) {
+      const dayEl = event.target.closest('#historyList details.day');
+      if (!dayEl) return;
+      event.preventDefault();
+      openHistoryDayActions(dayEl);
+    }
+
+    function suppressHistoryLongPressClick(event) {
+      if (Date.now() < historySuppressClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
 
     function onHistoryClick(event) {
       const btn = event.target.closest('[data-history-action]');

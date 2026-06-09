@@ -4,8 +4,8 @@
   "description": "Registro de entrenamientos de fuerza con histórico, progreso y sincronización con Google Sheets.",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f8f8f8",
-  "theme_color": "#f8f8f8",
+  "background_color": "#232629",
+  "theme_color": "#232629",
   "orientation": "portrait",
   "icons": [
     {
