@@ -189,9 +189,8 @@
     .heatmap-scroll::-webkit-scrollbar { display: none; }
     .heatmap-months { width: max-content; min-width: max-content; display: grid; grid-template-columns: repeat(var(--heat-weeks, 53), var(--heat-cell)); column-gap: var(--heat-gap); color: var(--muted); font-size: 10px; font-weight: 900; margin: 8px 0 6px; padding-left: 1px; }
     .heatmap-months span { min-width: 0; overflow: visible; white-space: nowrap; text-align: left; }
-    .heatmap-grid { width: max-content; min-width: max-content; display: flex; align-items: flex-start; gap: var(--heat-gap); }
-    .heat-week { display: grid; grid-template-rows: repeat(7, var(--heat-cell)); gap: var(--heat-gap); flex: 0 0 var(--heat-cell); }
-    .heat-dot { width: var(--heat-cell); height: var(--heat-cell); flex: 0 0 auto; border-radius: 3px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.045); box-sizing: border-box; }
+    .heatmap-grid { width: max-content; min-width: max-content; display: grid; grid-template-rows: repeat(7, var(--heat-cell)); grid-auto-flow: column; grid-auto-columns: var(--heat-cell); gap: var(--heat-gap); align-items: start; justify-content: start; }
+    .heat-dot { width: var(--heat-cell); height: var(--heat-cell); border-radius: 3px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.045); box-sizing: border-box; }
     .heat-dot.blank { visibility: hidden; }
     .heat-dot.l1 { background: rgba(125,211,252,.38); border-color: rgba(125,211,252,.10); }
     .heat-dot.l2 { background: rgba(125,211,252,.58); border-color: rgba(125,211,252,.18); }
@@ -1439,15 +1438,21 @@
       state.heatmapYear = year;
       $('heatYear').textContent = String(year);
 
-      const first = new Date(year, 0, 1);
-      const daysInYear = new Date(year, 12, 0).getDate();
-      const todayParts = todayIso.split('-').map(Number);
-      const todayLocal = new Date(todayParts[0], todayParts[1] - 1, todayParts[2]);
-      const todayDayOfYear = year === currentYear ? Math.floor((todayLocal - first) / 86400000) + 1 : daysInYear;
-      // Pinta el año completo en años pasados y en el año actual.
-      // Así nunca se queda cortado en febrero; el scroll te lleva a la zona de hoy.
-      let daysToRender = year <= currentYear ? daysInYear : 0;
-      daysToRender = Math.max(0, Math.min(daysInYear, daysToRender));
+      // Calendario robusto estilo GitHub: siempre pinta todas las semanas que tocan el año.
+      // No depende de "hasta hoy" para calcular columnas, así no puede quedarse cortado en enero/febrero.
+      const firstDay = new Date(year, 0, 1, 12, 0, 0, 0);
+      const lastDay = new Date(year, 11, 31, 12, 0, 0, 0);
+      const mondayIndex = d => (d.getDay() + 6) % 7; // lunes=0, domingo=6
+      const startDate = new Date(firstDay);
+      startDate.setDate(firstDay.getDate() - mondayIndex(firstDay));
+      const endDate = new Date(lastDay);
+      endDate.setDate(lastDay.getDate() + (6 - mondayIndex(lastDay)));
+      const MS_DAY = 24 * 60 * 60 * 1000;
+      const MS_WEEK = 7 * MS_DAY;
+      const weekCount = Math.round((endDate - startDate) / MS_WEEK) + 1;
+
+      grid.style.setProperty('--heat-weeks', weekCount);
+      months.style.setProperty('--heat-weeks', weekCount);
 
       const counts = {};
       state.logs.forEach(row => {
@@ -1455,62 +1460,46 @@
         if (date && date.startsWith(String(year))) counts[date] = (counts[date] || 0) + 1;
       });
 
-      const visibleDates = Object.keys(counts).filter(date => {
-        const parts = date.split('-').map(Number);
-        if (parts.length !== 3 || parts.some(Number.isNaN)) return false;
-        const d = new Date(parts[0], parts[1] - 1, parts[2]);
-        const dayOfYear = Math.floor((d - first) / 86400000) + 1;
-        return dayOfYear >= 1 && dayOfYear <= daysToRender;
-      });
-      const trainedDays = visibleDates.length;
-      const totalSets = visibleDates.reduce((sum, date) => sum + Number(counts[date] || 0), 0);
+      const trainedDates = Object.keys(counts).filter(date => date.startsWith(String(year)) && Number(counts[date] || 0) > 0);
+      const trainedDays = trainedDates.length;
+      const totalSets = trainedDates.reduce((sum, date) => sum + Number(counts[date] || 0), 0);
       $('heatStats').textContent = `${trainedDays} día${trainedDays === 1 ? '' : 's'} entrenado${trainedDays === 1 ? '' : 's'} · ${totalSets} series`;
-
-      const startOffset = (first.getDay() + 6) % 7; // lunes arriba
-      const totalCells = startOffset + daysToRender;
-      const weekCount = Math.max(1, Math.ceil(Math.max(totalCells, 1) / 7));
-
-      grid.style.setProperty('--heat-weeks', weekCount);
-      months.style.setProperty('--heat-weeks', weekCount);
 
       const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
       months.innerHTML = monthNames.map((m, idx) => {
-        if (daysToRender <= 0) return '';
-        const monthStart = new Date(year, idx, 1);
-        const monthEnd = new Date(year, idx + 1, 0);
-        const startDayOfYear = Math.floor((monthStart - first) / 86400000) + 1;
-        const endDayOfYear = Math.floor((monthEnd - first) / 86400000) + 1;
-        if (startDayOfYear > daysToRender) return '';
-        const visibleMonthEnd = Math.min(endDayOfYear, daysToRender);
-        const startCell = startOffset + startDayOfYear - 1;
-        const endCell = startOffset + visibleMonthEnd - 1;
-        const startWeek = Math.floor(startCell / 7) + 1;
-        const endWeek = Math.floor(endCell / 7) + 1;
+        const monthStart = new Date(year, idx, 1, 12, 0, 0, 0);
+        const monthEnd = new Date(year, idx + 1, 0, 12, 0, 0, 0);
+        const startWeek = Math.floor((monthStart - startDate) / MS_WEEK) + 1;
+        const endWeek = Math.floor((monthEnd - startDate) / MS_WEEK) + 1;
         return `<span style="grid-column:${startWeek} / span ${Math.max(1, endWeek - startWeek + 1)}">${m}</span>`;
       }).join('');
 
-      const weeks = Array.from({ length: weekCount }, () => Array(7).fill('<span class="heat-dot blank"></span>'));
-      for (let day = 1; day <= daysToRender; day++) {
-        const cellIndex = startOffset + day - 1;
-        const weekIndex = Math.floor(cellIndex / 7);
-        const rowIndex = cellIndex % 7;
-        const d = new Date(year, 0, day);
-        const iso = localISODate(d);
-        const count = counts[iso] || 0;
-        const level = count >= 16 ? 4 : count >= 10 ? 3 : count >= 5 ? 2 : count >= 1 ? 1 : 0;
-        const title = `${formatDateHuman(iso)} · ${count} serie${count === 1 ? '' : 's'}`;
-        weeks[weekIndex][rowIndex] = `<span class="heat-dot ${level ? `l${level}` : ''}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}"></span>`;
+      const cells = [];
+      for (let week = 0; week < weekCount; week++) {
+        for (let day = 0; day < 7; day++) {
+          const d = new Date(startDate);
+          d.setDate(startDate.getDate() + (week * 7) + day);
+          if (d.getFullYear() !== year) {
+            cells.push('<span class="heat-dot blank"></span>');
+            continue;
+          }
+          const iso = localISODate(d);
+          const count = counts[iso] || 0;
+          const level = count >= 16 ? 4 : count >= 10 ? 3 : count >= 5 ? 2 : count >= 1 ? 1 : 0;
+          const title = `${formatDateHuman(iso)} · ${count} serie${count === 1 ? '' : 's'}`;
+          cells.push(`<span class="heat-dot ${level ? `l${level}` : ''}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}"></span>`);
+        }
       }
-      grid.innerHTML = weeks.map(week => `<div class="heat-week">${week.join('')}</div>`).join('');
+      grid.innerHTML = cells.join('');
 
       requestAnimationFrame(() => {
         if (!scroller) return;
         if (year === currentYear && grid.children.length) {
-          const startOffsetForToday = (first.getDay() + 6) % 7;
-          const todayCell = startOffsetForToday + Math.max(1, Math.min(daysInYear, todayDayOfYear)) - 1;
-          const todayWeek = Math.max(0, Math.floor(todayCell / 7));
-          const target = grid.children[todayWeek];
-          scroller.scrollLeft = target ? Math.max(0, target.offsetLeft - scroller.clientWidth + 80) : 0;
+          const parts = todayIso.split('-').map(Number);
+          const todayDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0, 0);
+          const todayWeek = Math.max(0, Math.min(weekCount - 1, Math.floor((todayDate - startDate) / MS_WEEK)));
+          const target = grid.children[todayWeek * 7];
+          scroller.scrollLeft = target ? Math.max(0, target.offsetLeft - scroller.clientWidth + 90) : 0;
         } else {
           scroller.scrollLeft = 0;
         }
