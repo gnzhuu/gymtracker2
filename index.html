@@ -185,11 +185,12 @@
     .heatmap-nav { display: flex; align-items: center; gap: 8px; }
     .heatmap-year { min-width: 54px; text-align: center; font-weight: 950; letter-spacing: -.03em; }
     .heatmap-arrow { width: 34px; height: 34px; border-radius: 13px; border: 1px solid var(--line); background: rgba(255,255,255,.07); color: var(--text); font-size: 20px; font-weight: 950; display: grid; place-items: center; touch-action: manipulation; }
-    .heatmap-scroll { width: 100%; overflow: hidden; padding: 3px 0 2px; }
-    .heatmap-months { width: 100%; display: grid; grid-template-columns: repeat(var(--heat-weeks, 53), minmax(0, 1fr)); gap: 1px; color: var(--muted); font-size: 8.5px; font-weight: 900; margin: 8px 0 6px; }
-    .heatmap-months span { min-width: 0; overflow: hidden; white-space: nowrap; text-align: left; }
-    .heatmap-grid { width: 100%; display: grid; grid-template-columns: repeat(var(--heat-weeks, 53), minmax(0, 1fr)); grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: 1.8px; }
-    .heat-dot { width: 100%; aspect-ratio: 1 / 1; min-width: 0; border-radius: 2px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.04); }
+    .heatmap-scroll { --heat-cell: 10px; --heat-gap: 3px; width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 3px 0 6px; overscroll-behavior-x: contain; }
+    .heatmap-scroll::-webkit-scrollbar { display: none; }
+    .heatmap-months { width: max-content; min-width: 100%; display: grid; grid-template-columns: repeat(var(--heat-weeks, 53), var(--heat-cell)); column-gap: var(--heat-gap); color: var(--muted); font-size: 10px; font-weight: 900; margin: 8px 0 6px; padding-left: 1px; }
+    .heatmap-months span { min-width: 0; overflow: visible; white-space: nowrap; text-align: left; }
+    .heatmap-grid { width: max-content; min-width: 100%; display: grid; grid-template-columns: repeat(var(--heat-weeks, 53), var(--heat-cell)); grid-template-rows: repeat(7, var(--heat-cell)); grid-auto-flow: column; gap: var(--heat-gap); }
+    .heat-dot { width: var(--heat-cell); height: var(--heat-cell); flex: 0 0 auto; border-radius: 3px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.045); }
     .heat-dot.blank { visibility: hidden; }
     .heat-dot.l1 { background: rgba(125,211,252,.38); border-color: rgba(125,211,252,.10); }
     .heat-dot.l2 { background: rgba(125,211,252,.58); border-color: rgba(125,211,252,.18); }
@@ -354,7 +355,7 @@
             <button id="heatNextYear" class="heatmap-arrow" type="button">›</button>
           </div>
         </div>
-        <div class="line2"><span id="heatStats">0 días entrenados</span><span>año completo</span></div>
+        <div class="line2"><span id="heatStats">0 días entrenados</span><span>desliza</span></div>
         <div class="heatmap-scroll" aria-label="Calendario de entrenamientos">
           <div id="heatMonths" class="heatmap-months"></div>
           <div id="heatGrid" class="heatmap-grid"></div>
@@ -1428,11 +1429,19 @@
     function renderTrainingHeatmap() {
       const grid = $('heatGrid');
       const months = $('heatMonths');
+      const scroller = document.querySelector('.heatmap-scroll');
       if (!grid || !months) return;
 
       const year = Number(state.heatmapYear || todayISO().slice(0, 4));
       state.heatmapYear = year;
       $('heatYear').textContent = String(year);
+
+      const currentYear = Number(todayISO().slice(0, 4));
+      const today = new Date();
+      const first = new Date(year, 0, 1);
+      const daysInYear = new Date(year, 12, 0).getDate();
+      const todayDayOfYear = year === currentYear ? Math.floor((new Date(today.getFullYear(), today.getMonth(), today.getDate()) - first) / 86400000) + 1 : daysInYear;
+      const daysToRender = year < currentYear ? daysInYear : year === currentYear ? Math.max(1, Math.min(daysInYear, todayDayOfYear)) : 0;
 
       const counts = {};
       state.logs.forEach(row => {
@@ -1440,15 +1449,18 @@
         if (date && date.startsWith(String(year))) counts[date] = (counts[date] || 0) + 1;
       });
 
-      const trainedDays = Object.keys(counts).length;
-      const totalSets = Object.values(counts).reduce((sum, n) => sum + Number(n || 0), 0);
+      const visibleDates = Object.keys(counts).filter(date => {
+        const d = new Date(date + 'T00:00:00');
+        const dayOfYear = Math.floor((d - first) / 86400000) + 1;
+        return dayOfYear >= 1 && dayOfYear <= Math.max(daysToRender, 0);
+      });
+      const trainedDays = visibleDates.length;
+      const totalSets = visibleDates.reduce((sum, date) => sum + Number(counts[date] || 0), 0);
       $('heatStats').textContent = `${trainedDays} día${trainedDays === 1 ? '' : 's'} entrenado${trainedDays === 1 ? '' : 's'} · ${totalSets} series`;
 
-      const first = new Date(year, 0, 1);
       const startOffset = (first.getDay() + 6) % 7; // lunes arriba
-      const daysInYear = new Date(year, 12, 0).getDate();
-      const totalCells = startOffset + daysInYear;
-      const weekCount = Math.ceil(totalCells / 7);
+      const totalCells = startOffset + Math.max(daysToRender, 0);
+      const weekCount = Math.max(1, Math.ceil(totalCells / 7));
       const paddedCells = weekCount * 7;
 
       grid.style.setProperty('--heat-weeks', weekCount);
@@ -1456,12 +1468,15 @@
 
       const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
       months.innerHTML = monthNames.map((m, idx) => {
+        if (daysToRender <= 0) return '';
         const monthStart = new Date(year, idx, 1);
         const monthEnd = new Date(year, idx + 1, 0);
         const startDayOfYear = Math.floor((monthStart - first) / 86400000) + 1;
         const endDayOfYear = Math.floor((monthEnd - first) / 86400000) + 1;
+        if (startDayOfYear > daysToRender) return '';
+        const visibleMonthEnd = Math.min(endDayOfYear, daysToRender);
         const startCell = startOffset + startDayOfYear - 1;
-        const endCell = startOffset + endDayOfYear - 1;
+        const endCell = startOffset + visibleMonthEnd - 1;
         const startWeek = Math.floor(startCell / 7) + 1;
         const endWeek = Math.floor(endCell / 7) + 1;
         return `<span style="grid-column:${startWeek} / span ${Math.max(1, endWeek - startWeek + 1)}">${m}</span>`;
@@ -1470,7 +1485,7 @@
       const cells = [];
       for (let i = 0; i < startOffset; i++) cells.push('<span class="heat-dot blank"></span>');
 
-      for (let day = 1; day <= daysInYear; day++) {
+      for (let day = 1; day <= daysToRender; day++) {
         const d = new Date(year, 0, day);
         const iso = localISODate(d);
         const count = counts[iso] || 0;
@@ -1481,6 +1496,13 @@
 
       for (let i = totalCells; i < paddedCells; i++) cells.push('<span class="heat-dot blank"></span>');
       grid.innerHTML = cells.join('');
+
+      // En el año actual, déjalo desplazado al final para ver la zona reciente.
+      // En años pasados, empieza al principio.
+      requestAnimationFrame(() => {
+        if (!scroller) return;
+        scroller.scrollLeft = year === currentYear ? scroller.scrollWidth : 0;
+      });
     }
 
     function renderHistoryFilters() {
