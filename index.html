@@ -1601,22 +1601,22 @@ details.history-day .btn {
 
   <div id="setupModal" class="setup-modal" aria-modal="true" role="dialog">
     <div class="setup-box">
-      <h2>Configurar actualización</h2>
-      <p>Introduce la contraseña una vez. Se guarda solo en este iPhone y se usará para actualizar con Google Sheets.</p>
+      <h2>Conectar con Google Sheets</h2>
+      <p>Introduce la contraseña una vez. Se guarda solo en este dispositivo y se usará para guardar/cargar en Google Sheets.</p>
       <label>Contraseña
         <input id="apiTokenInput" type="password" autocomplete="current-password" placeholder="Contraseña de la app">
       </label>
       <div class="setup-actions">
-        <button id="saveApiTokenBtn" class="btn" type="button">Guardar y cargar datos</button>
+        <button id="saveApiTokenBtn" class="btn" type="button">Guardar y cargar</button>
         <button id="skipApiTokenBtn" class="btn secondary" type="button">Ver sin conectar</button>
       </div>
-      <p class="hint" style="margin-top:12px">Para guardar o borrar necesitas la contraseña correcta. Sin conectar solo podrás consultar lo que ya esté cargado en pantalla.</p>
+      <p class="hint" style="margin-top:12px">Con internet se guarda directo en Sheets. Sin cobertura, el día queda pendiente en este dispositivo y se sube al volver internet.</p>
     </div>
   </div>
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
-    const APP_VERSION = 'v46-clean-sheets';
+    const APP_VERSION = 'v47-json-days';
     const MAX_JSONP_URL_LENGTH = 7600;
 
     const DEFAULT_EXERCISES = {
@@ -1638,7 +1638,9 @@ details.history-day .btn {
       pendingExerciseDeletes: 'gymtracker_pending_exercise_deletes_v1',
       lastSyncAt: 'gymtracker_last_sync_at_v1',
       selectedGroup: 'gymtracker_selected_group_ui_v1',
-      globalDate: 'gymtracker_global_date_ui_v1'
+      globalDate: 'gymtracker_global_date_ui_v1',
+      pendingDaySaves: 'gymtracker_pending_day_saves_v47',
+      pendingDayDeletes: 'gymtracker_pending_day_deletes_v47'
     };
 
     // Claves antiguas que se usaban como copia local completa. Ya no se usan.
@@ -1666,12 +1668,13 @@ details.history-day .btn {
       historyMode: 'days',
       heatmapYear: Number(todayISO().slice(0, 4)),
 
-      // No hay base local. Esto se rellena desde Sheets en cada carga.
+      // Sheets es la fuente de verdad. Offline solo guardamos días completos pendientes.
       exercises: clone(DEFAULT_EXERCISES),
       logs: [],
       dayNames: {},
 
-      // Sin cola offline: las operaciones se confirman directamente en Sheets.
+      pendingDaySaves: loadJsonWithMigration(LS.pendingDaySaves, null, {}),
+      pendingDayDeletes: loadJsonWithMigration(LS.pendingDayDeletes, null, {}),
       pendingExercises: [],
       pendingDayNames: [],
       pendingDeletes: [],
@@ -1687,8 +1690,8 @@ details.history-day .btn {
     };
 
     document.addEventListener('DOMContentLoaded', init);
-    window.addEventListener('online', () => { toast('Internet recuperado'); syncData({ reason: 'online' }); renderAll(); });
-    window.addEventListener('offline', () => { toast('Sin conexión. No se pueden guardar cambios.'); renderAll(); });
+    window.addEventListener('online', () => { toast('Internet recuperado. Subiendo pendientes…'); syncData({ reason: 'online', manual: true }); renderAll(); });
+    window.addEventListener('offline', () => { toast('Sin conexión. Los cambios del día quedarán pendientes.'); renderAll(); });
     window.addEventListener('pageshow', () => scheduleAutoSync('pageshow'));
     window.addEventListener('focus', () => scheduleAutoSync('focus'));
     document.addEventListener('visibilitychange', () => {
@@ -1697,11 +1700,12 @@ details.history-day .btn {
 
     function init() {
       clearFullLocalCopies();
-      clearLocalOperationQueues();
+      
       const startDate = localStorage.getItem(LS.globalDate) || todayISO();
       $('globalDate').value = startDate;
       $('todayText').textContent = formatDateHuman(startDate);
       bindEvents();
+      applyPendingDayOverlays();
       renderAll();
       registerServiceWorker();
       ensureApiTokenConfigured();
@@ -1773,7 +1777,7 @@ details.history-day .btn {
         localStorage.setItem(LS.setupSkipped, '1');
         closeSetupModal();
         renderAll();
-        toast('Puedes ver la app, pero no guardar sin conectar Sheets');
+        toast('Puedes usarla; sin contraseña no se subirá a Sheets');
       });
       $('apiTokenInput').addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter') saveApiTokenFromModal();
@@ -1806,7 +1810,7 @@ details.history-day .btn {
             openSetupModal();
             toast('Introduce la contraseña');
           } else {
-            toast('Sin conexión. No se pueden guardar cambios')
+            toast('Sin conexión. Cambios pendientes guardados en este dispositivo')
           }
         }
         return Promise.resolve(false);
@@ -1835,7 +1839,7 @@ details.history-day .btn {
       state.bootstrapping = true;
       renderSyncStatus(manual ? 'Actualizando datos…' : 'Cargando datos…');
 
-      return bootstrapFromServer({ silent: true })
+      return commitPendingChanges().then(() => bootstrapFromServer({ silent: true }))
         .then(ok => {
           state.syncing = false;
           state.bootstrapping = false;
@@ -1862,6 +1866,7 @@ details.history-day .btn {
             replaceSyncedLogsFromServer(data.history || []);
 
             state.dayNames = { ...(data.dayNames || {}) };
+            applyPendingDayOverlays();
 
             localStorage.setItem(LS.lastSyncAt, new Date().toISOString());
             saveLocal();
@@ -2103,11 +2108,10 @@ details.history-day .btn {
 
     function saveDraftWorkout() {
       if (!state.draft) return;
-      if (!canWriteToSheets()) return;
 
-      const fecha = state.draft.fecha || $('globalDate').value || todayISO();
-      const baseSerie = state.logs.filter(x => x.fecha === fecha && x.ejercicio === state.draft.exercise).length;
-      const entries = [];
+      const fecha = normalizeDate(state.draft.fecha || $('globalDate').value || todayISO());
+      const baseSerie = state.logs.filter(x => normalizeDate(x.fecha) === fecha && x.ejercicio === state.draft.exercise).length;
+      const newEntries = [];
 
       for (let i = 0; i < state.draft.sets.length; i++) {
         const set = state.draft.sets[i];
@@ -2118,7 +2122,7 @@ details.history-day .btn {
         if (!Number.isFinite(reps) || reps <= 0) { toast(`Reps inválidas en serie ${i + 1}`); return; }
         if (rir !== '' && (!Number.isFinite(rir) || rir < 0)) { toast(`RIR inválido en serie ${i + 1}`); return; }
 
-        entries.push({
+        newEntries.push({
           id: makeId(),
           fecha,
           grupo: state.draft.group,
@@ -2133,23 +2137,37 @@ details.history-day .btn {
         });
       }
 
+      const dayRows = state.logs
+        .filter(x => normalizeDate(x.fecha) === fecha)
+        .concat(newEntries)
+        .map((row, index) => ({ ...row, fecha, serie: row.serie || index + 1 }));
+      const name = state.dayNames[fecha] || '';
+      const payload = makeDayPayload(fecha, name, dayRows);
+
+      // Primero actualizamos la pantalla y dejamos el día completo pendiente.
+      queueDaySave(payload);
+      applyDayRowsLocally(fecha, dayRows, name);
+      state.draft = makeDraft(state.draft.group, state.draft.exercise, fecha);
+      renderAll();
+
       const btn = $('saveExerciseWorkoutBtn');
       btn.disabled = true;
       const oldText = btn.textContent;
-      btn.textContent = 'Guardando en Sheets…';
-      renderSyncStatus('Guardando…');
+      btn.textContent = navigator.onLine && hasApiToken() ? 'Guardando en Sheets…' : 'Guardado pendiente…';
 
-      callApi('saveWorkout', { payload: JSON.stringify({ entries }) })
+      commitPendingChanges()
         .then(res => {
-          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo guardar');
-          toast(`${entries.length} serie${entries.length === 1 ? '' : 's'} guardada${entries.length === 1 ? '' : 's'} en Sheets`);
-          state.draft = makeDraft(state.draft.group, state.draft.exercise, fecha);
-          return bootstrapFromServer({ silent: true });
+          if (res && res.ok) {
+            toast(`${newEntries.length} serie${newEntries.length === 1 ? '' : 's'} guardada${newEntries.length === 1 ? '' : 's'}`);
+            return bootstrapFromServer({ silent: true });
+          }
+          toast('Sin conexión: día guardado pendiente de subir');
+          return false;
         })
         .then(() => renderAll())
         .catch(err => {
           console.warn(err);
-          toast(err && err.message ? err.message : 'No se pudo guardar en Sheets');
+          toast('Guardado pendiente. Se subirá cuando vuelva internet.');
           renderSyncStatus();
         })
         .finally(() => {
@@ -2266,12 +2284,133 @@ details.history-day .btn {
 
 
     function syncPending(manual = false, options = {}) {
-      return syncData({ manual, reason: 'refresh-compat', forceReload: true });
+      return commitPendingChanges(manual).then(() => {
+        if (options && options.skipBootstrap) return { ok: true };
+        return syncData({ manual, reason: 'refresh-compat', forceReload: true });
+      });
     }
 
-    function commitPendingChanges() {
-      // Compatibilidad interna: en esta versión no hay cola ni endpoint de syncBatch.
-      return Promise.resolve({ ok: true, syncedCount: 0 });
+    function commitPendingChanges(manual = false) {
+      if (!hasServer() || !hasApiToken() || !navigator.onLine) {
+        renderSyncStatus();
+        if (manual && !hasApiToken()) openSetupModal();
+        return Promise.resolve({ ok: false, offline: true });
+      }
+
+      const deletes = Object.keys(state.pendingDayDeletes || {}).sort();
+      const saves = Object.keys(state.pendingDaySaves || {})
+        .filter(date => !state.pendingDayDeletes[date])
+        .sort();
+      if (!deletes.length && !saves.length) {
+        renderSyncStatus();
+        return Promise.resolve({ ok: true, syncedCount: 0 });
+      }
+
+      state.syncing = true;
+      renderSyncStatus('Subiendo pendientes…');
+      let chain = Promise.resolve({ ok: true, syncedCount: 0 });
+
+      deletes.forEach(date => {
+        chain = chain.then(result => callApi('deleteDay', { date }).then(res => {
+          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo borrar pendiente');
+          delete state.pendingDayDeletes[date];
+          delete state.pendingDaySaves[date];
+          saveLocal();
+          result.syncedCount += 1;
+          return result;
+        }));
+      });
+
+      saves.forEach(date => {
+        chain = chain.then(result => {
+          const payload = state.pendingDaySaves[date];
+          if (!payload) return result;
+          return callApi('saveDay', { payload: JSON.stringify(payload) }).then(res => {
+            if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo subir pendiente');
+            delete state.pendingDaySaves[date];
+            saveLocal();
+            result.syncedCount += 1;
+            return result;
+          });
+        });
+      });
+
+      return chain.then(result => {
+        state.syncing = false;
+        saveLocal();
+        renderSyncStatus();
+        return result;
+      }).catch(err => {
+        state.syncing = false;
+        saveLocal();
+        renderSyncStatus();
+        if (manual) toast(err && err.message ? err.message : 'No se pudieron subir pendientes');
+        return { ok: false, error: err && err.message ? err.message : String(err) };
+      });
+    }
+
+    function makeDayPayload(date, name, entries) {
+      date = normalizeDate(date);
+      return {
+        date,
+        name: String(name || '').trim(),
+        entries: (entries || []).map((row, index) => ({
+          id: row.id || makeId(),
+          fecha: date,
+          grupo: row.grupo,
+          ejercicio: row.ejercicio,
+          serie: Number(row.serie || index + 1),
+          kg: Number(row.kg || 0),
+          reps: Number(row.reps || 0),
+          rir: row.rir === undefined || row.rir === null ? '' : row.rir,
+          notas: String(row.notas || '').trim(),
+          volumen: Number(row.volumen || (Number(row.kg || 0) * Number(row.reps || 0))),
+          createdAt: row.createdAt || new Date(Date.now() + index).toISOString()
+        })),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    function queueDaySave(payload) {
+      if (!payload || !payload.date) return;
+      const date = normalizeDate(payload.date);
+      state.pendingDaySaves[date] = { ...payload, date, updatedAt: new Date().toISOString() };
+      delete state.pendingDayDeletes[date];
+      saveLocal();
+    }
+
+    function queueDayDelete(date) {
+      date = normalizeDate(date);
+      if (!date) return;
+      state.pendingDayDeletes[date] = { date, deletedAt: new Date().toISOString() };
+      delete state.pendingDaySaves[date];
+      saveLocal();
+    }
+
+    function applyDayRowsLocally(date, rows, name) {
+      date = normalizeDate(date);
+      state.logs = state.logs.filter(x => normalizeDate(x.fecha) !== date).concat((rows || []).map(x => ({ ...x, fecha: date, syncStatus: state.pendingDaySaves[date] ? 'pending' : 'synced' })));
+      state.logs.sort((a,b) => String(b.createdAt || b.fecha).localeCompare(String(a.createdAt || a.fecha)));
+      if (String(name || '').trim()) state.dayNames[date] = String(name).trim();
+      else delete state.dayNames[date];
+    }
+
+    function applyPendingDayOverlays() {
+      Object.keys(state.pendingDayDeletes || {}).forEach(date => removeLocalDay(date));
+      Object.keys(state.pendingDaySaves || {}).forEach(date => {
+        if (state.pendingDayDeletes[date]) return;
+        const payload = state.pendingDaySaves[date];
+        applyDayRowsLocally(date, payload.entries || [], payload.name || '');
+      });
+    }
+
+    function flattenPendingDaySaves(obj) {
+      const out = [];
+      Object.keys(obj || {}).forEach(date => {
+        const payload = obj[date];
+        (payload.entries || []).forEach(row => out.push({ ...row, fecha: normalizeDate(date), syncStatus: 'pending' }));
+      });
+      return out;
     }
 
     function callApi(action, params = {}) {
@@ -2337,6 +2476,11 @@ details.history-day .btn {
       renderSettingsStatus();
     }
 
+
+    function pendingCount() {
+      return Object.keys(state.pendingDaySaves || {}).length + Object.keys(state.pendingDayDeletes || {}).length;
+    }
+
     function renderSyncStatus(customText) {
       const el = $('syncStatus');
       el.className = 'sync-pill';
@@ -2350,11 +2494,17 @@ details.history-day .btn {
         el.textContent = '🔴 Sin internet';
         el.classList.add('bad');
       } else if (state.syncing) {
-        el.textContent = '🟠 Cargando…';
+        el.textContent = '🟠 Trabajando…';
         el.classList.add('warn');
       } else {
-        el.textContent = '🟢 Sheets OK';
-        el.classList.add('good');
+        const pending = pendingCount();
+        if (pending > 0) {
+          el.textContent = `🟠 ${pending} pendiente${pending === 1 ? '' : 's'}`;
+          el.classList.add('warn');
+        } else {
+          el.textContent = '🟢 Sheets OK';
+          el.classList.add('good');
+        }
       }
     }
 
@@ -2363,9 +2513,11 @@ details.history-day .btn {
       if (!el) return;
       const netText = navigator.onLine ? 'Con internet' : 'Sin conexión';
       const tokenText = hasApiToken() ? 'Contraseña guardada' : 'Sin contraseña configurada';
+      const pending = pendingCount();
+      const pendingText = pending ? `Pendientes en este dispositivo: ${pending}` : 'Sin pendientes locales';
       const lastSync = localStorage.getItem(LS.lastSyncAt);
       const lastText = lastSync ? `Última lectura de Sheets: ${formatDateTimeShort(lastSync)}` : 'Aún sin lectura de Sheets';
-      el.innerHTML = `<strong>${netText}</strong><br>${tokenText}<br>Sin cola offline ni base local duplicada.<br>${lastText}<br>Hojas nuevas: GT_Entrenamientos_v46, GT_Ejercicios_v46 y GT_Dias_v46.`;
+      el.innerHTML = `<strong>${netText}</strong><br>${tokenText}<br>${pendingText}<br>${lastText}<br>Modelo v47: 1 fila JSON por día. Offline mínimo por día completo.`;
     }
 
     function renderGroups() {
@@ -2816,53 +2968,51 @@ details.history-day .btn {
     }
 
     function renameWorkoutDay(date) {
-      if (!canWriteToSheets()) return;
+      date = normalizeDate(date);
       const current = getDayName(date) === 'Entrenamiento' ? '' : getDayName(date);
       const name = window.prompt('Nombre del entrenamiento', current);
       if (name === null) return;
       const clean = String(name).trim();
+      const rows = state.logs.filter(x => normalizeDate(x.fecha) === date);
+      const payload = makeDayPayload(date, clean, rows);
 
-      toast('Guardando nombre en Sheets…');
-      callApi('saveDayName', { date, name: clean })
+      queueDaySave(payload);
+      applyDayRowsLocally(date, rows, clean);
+      renderAll();
+
+      commitPendingChanges(true)
         .then(res => {
-          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo guardar el nombre');
-          if (clean) state.dayNames[date] = clean;
-          else delete state.dayNames[date];
-          return bootstrapFromServer({ silent: true });
+          if (res && res.ok) return bootstrapFromServer({ silent: true });
+          return false;
         })
-        .then(() => {
-          renderAll();
-          toast(clean ? 'Nombre guardado' : 'Nombre quitado');
-        })
+        .then(() => { renderAll(); toast(clean ? 'Nombre guardado' : 'Nombre quitado'); })
         .catch(err => {
           console.warn(err);
-          toast(err && err.message ? err.message : 'No se pudo guardar el nombre');
+          toast('Nombre pendiente de subir');
         });
     }
 
     function deleteWorkoutDay(date) {
-      if (!canWriteToSheets()) return;
       date = normalizeDate(date);
       const rows = state.logs.filter(x => normalizeDate(x.fecha) === date);
       const name = getDayName(date);
       if (!rows.length && !state.dayNames[date]) return;
-      const ok = window.confirm(`¿Borrar ${rows.length} series de ${formatDateHuman(date)}${name !== 'Entrenamiento' ? ' (' + name + ')' : ''}?`);
+      const ok = window.confirm(`¿Borrar el día ${formatDateHuman(date)}${name !== 'Entrenamiento' ? ' (' + name + ')' : ''}?`);
       if (!ok) return;
 
-      toast('Borrando día en Sheets…');
-      callApi('deleteDay', { date })
+      queueDayDelete(date);
+      removeLocalDay(date);
+      renderAll();
+
+      commitPendingChanges(true)
         .then(res => {
-          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo borrar el día');
-          removeLocalDay(date);
-          return bootstrapFromServer({ silent: true });
+          if (res && res.ok) return bootstrapFromServer({ silent: true });
+          return false;
         })
-        .then(() => {
-          renderAll();
-          toast('Día borrado de Sheets');
-        })
+        .then(() => { renderAll(); toast('Día borrado'); })
         .catch(err => {
           console.warn(err);
-          toast(err && err.message ? err.message : 'No se pudo borrar el día');
+          toast('Borrado pendiente de subir');
         });
     }
 
@@ -3003,13 +3153,16 @@ details.history-day .btn {
 
 
     function saveLocal() {
-      clearLocalOperationQueues();
+      try {
+        localStorage.setItem(LS.pendingDaySaves, JSON.stringify(state.pendingDaySaves || {}));
+        localStorage.setItem(LS.pendingDayDeletes, JSON.stringify(state.pendingDayDeletes || {}));
+      } catch (e) { console.warn(e); }
       clearFullLocalCopies();
+      clearLocalOperationQueues();
     }
 
     function saveOfflineQueue() {
-      clearLocalOperationQueues();
-      clearFullLocalCopies();
+      saveLocal();
     }
 
     function clearFullLocalCopies() {
@@ -3049,7 +3202,7 @@ details.history-day .btn {
     function canWriteToSheets() {
       if (!hasServer()) { toast('API no configurada'); return false; }
       if (!hasApiToken()) { openSetupModal(); toast('Introduce la contraseña'); return false; }
-      if (!navigator.onLine) { toast('Sin conexión. No se pueden guardar cambios'); return false; }
+      if (!navigator.onLine) { toast('Sin conexión. Cambios pendientes guardados en este dispositivo'); return false; }
       return true;
     }
 
@@ -3151,7 +3304,7 @@ details.history-day .btn {
       toast('Limpiando caché local…');
 
       clearFullLocalCopies();
-      clearLocalOperationQueues();
+      
 
       state.logs = [];
       state.exercises = clone(DEFAULT_EXERCISES);

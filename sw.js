@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gym-tracker-v46-clean-sheets';
+const CACHE_NAME = 'gym-tracker-v47-json-days';
 const CORE_ASSETS = [
   './',
   './index.html',
