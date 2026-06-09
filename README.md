@@ -1,35 +1,28 @@
-# GymTracker v45 — Sync profesional con Sheets + Apps Script
+# Gym Tracker v46-clean-sheets
 
-Cambio principal frente a v44:
-- Google Sheets sigue siendo la única base de datos autoritativa.
-- El navegador solo conserva cola offline mínima.
-- La sincronización ahora se hace con un endpoint atómico `syncBatch`.
-- Apps Script usa `LockService` para evitar escrituras simultáneas.
-- Las escrituras a Sheets se hacen por lotes cuando aplica.
-- Se añade la hoja `BorradosDia` como registro de tombstones: si borras un día, entradas antiguas pendientes de otro dispositivo no pueden resucitarlo.
-- El botón “Actualizar” primero sube cola pendiente y después recarga desde Sheets.
-- Se añade cache-busting a las llamadas de API para evitar respuestas antiguas.
+Versión simplificada para evitar errores de guardado/borrado.
 
-Archivos para GitHub Pages:
-- `index.html`
-- `sw.js`
-- `manifest.webmanifest`
-- `icon.svg`
-- `icon-180.png`
-- `icon-192.png`
-- `icon-512.png`
+## Qué cambia
 
-Apps Script:
+- Usa hojas nuevas limpias en el mismo Spreadsheet:
+  - `GT_Entrenamientos_v46`
+  - `GT_Ejercicios_v46`
+  - `GT_Dias_v46`
+- Ignora las hojas antiguas que podían estar contaminadas por versiones anteriores.
+- El navegador ya no guarda una cola offline de cambios.
+- Guardar, borrar y renombrar se hacen directamente en Google Sheets.
+- La pantalla solo cambia cuando Sheets confirma la operación.
+- Apps Script usa `LockService` para que dos escrituras a la vez no pisen datos.
+
+## Instalación
+
 1. Copia `appscript/Code.gs` en tu proyecto de Apps Script.
-2. Guarda.
-3. Ejecuta `setup()` una vez.
-4. Ve a **Implementar > Gestionar implementaciones**.
-5. Edita la implementación actual.
-6. Selecciona **Nueva versión**.
-7. Implementa.
+2. Ejecuta `setup()` una vez desde Apps Script.
+3. Despliega una nueva versión del Web App.
+4. Sube `index.html`, `sw.js`, `manifest.webmanifest` e iconos a GitHub Pages.
+5. En la app, ve a Ajustes → Actualizar app para limpiar caché.
 
-La primera ejecución creará/actualizará estas hojas:
-- `Entrenamientos`
-- `Ejercicios`
-- `EntrenosDia`
-- `BorradosDia`
+## Importante
+
+Esta versión empieza desde cero en hojas nuevas. Los datos viejos no se borran, pero tampoco se leen.
+Si quieres migrar entrenos antiguos buenos, copia filas manualmente desde la hoja vieja a `GT_Entrenamientos_v46` respetando las cabeceras.

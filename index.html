@@ -1537,7 +1537,7 @@ details.history-day .btn {
             <input id="newExerciseName" type="text" autocomplete="off" placeholder="Ej: Press banca pausa">
           </label>
           <button id="addExerciseBtn" class="btn" type="button">Añadir ejercicio</button>
-          <button id="manualSyncBtn" class="btn secondary" type="button">Sincronizar ahora</button>
+          <button id="manualSyncBtn" class="btn secondary" type="button">Actualizar ejercicios</button>
         </div>
       </div>
 
@@ -1558,17 +1558,17 @@ details.history-day .btn {
         </div>
         <div class="grid">
           <button id="settingsUpdateAppBtn" class="btn" type="button">Actualizar app</button>
-          <button id="settingsSyncBtn" class="btn secondary" type="button">Sincronizar ahora</button>
+          <button id="settingsSyncBtn" class="btn secondary" type="button">Actualizar datos</button>
           <button id="settingsTokenBtn" class="btn secondary" type="button">Cambiar contraseña</button>
           <button id="settingsRefreshBtn" class="btn secondary" type="button">Recargar datos de Sheets</button>
           <button id="settingsRepairBtn" class="btn danger" type="button">Limpiar caché local y recargar</button>
         </div>
-        <p class="hint" style="margin-top:10px">Google Sheets es la única base de datos. El navegador solo conserva una cola offline con cambios pendientes de subir. Al recuperar conexión, se sube la cola, se vacía y se recarga todo desde Sheets.</p>
+        <p class="hint" style="margin-top:10px">Google Sheets es la única base de datos. Esta versión usa hojas nuevas limpias y solo cambia la pantalla cuando Sheets confirma la operación.</p>
       </div>
 
       <div class="card soft">
-        <div class="section-title"><h2>Estado offline</h2></div>
-        <p class="hint">Sin cobertura solo se guarda una cola de cambios pendientes. Con internet, se suben a Sheets y se vacía la cola.</p>
+        <div class="section-title"><h2>Estado</h2></div>
+        <p class="hint">Sin internet puedes mirar lo cargado, pero guardar, borrar o renombrar requiere confirmación de Sheets.</p>
         <div id="settingsStatus" class="empty" style="margin-top:12px;text-align:left"></div>
       </div>
     </section>
@@ -1601,22 +1601,22 @@ details.history-day .btn {
 
   <div id="setupModal" class="setup-modal" aria-modal="true" role="dialog">
     <div class="setup-box">
-      <h2>Configurar sincronización</h2>
-      <p>Introduce la contraseña una vez. Se guarda solo en este iPhone y se usará para sincronizar con Google Sheets.</p>
+      <h2>Configurar actualización</h2>
+      <p>Introduce la contraseña una vez. Se guarda solo en este iPhone y se usará para actualizar con Google Sheets.</p>
       <label>Contraseña
         <input id="apiTokenInput" type="password" autocomplete="current-password" placeholder="Contraseña de la app">
       </label>
       <div class="setup-actions">
-        <button id="saveApiTokenBtn" class="btn" type="button">Guardar y sincronizar</button>
-        <button id="skipApiTokenBtn" class="btn secondary" type="button">Seguir sin sincronizar</button>
+        <button id="saveApiTokenBtn" class="btn" type="button">Guardar y cargar datos</button>
+        <button id="skipApiTokenBtn" class="btn secondary" type="button">Ver sin conectar</button>
       </div>
-      <p class="hint" style="margin-top:12px">Puedes registrar entrenamientos sin configurarlo. Se quedarán pendientes hasta que guardes la contraseña correcta.</p>
+      <p class="hint" style="margin-top:12px">Para guardar o borrar necesitas la contraseña correcta. Sin conectar solo podrás consultar lo que ya esté cargado en pantalla.</p>
     </div>
   </div>
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbydB_ksmFcp9alH28l-8v_4pRoyLQZ5tN8lYB6jd1QGF0UV8Q-kHDFeLOJ6ANa3_1GL/exec';
-    const APP_VERSION = 'v21-pro-sync';
+    const APP_VERSION = 'v46-clean-sheets';
     const MAX_JSONP_URL_LENGTH = 7600;
 
     const DEFAULT_EXERCISES = {
@@ -1666,16 +1666,16 @@ details.history-day .btn {
       historyMode: 'days',
       heatmapYear: Number(todayISO().slice(0, 4)),
 
-      // No hay base local. Esto se rellena desde Sheets en cada carga/sync.
+      // No hay base local. Esto se rellena desde Sheets en cada carga.
       exercises: clone(DEFAULT_EXERCISES),
-      logs: loadPendingLogsOnly(),
+      logs: [],
       dayNames: {},
 
-      // Único almacenamiento local permitido: cola offline de cambios por subir.
-      pendingExercises: loadJsonWithMigration(LS.pendingExercises, LEGACY_LS.oldPendingExercises, []),
-      pendingDayNames: loadJsonWithMigration(LS.pendingDayNames, null, []),
-      pendingDeletes: loadJsonWithMigration(LS.pendingDeletes, null, []),
-      pendingExerciseDeletes: loadJsonWithMigration(LS.pendingExerciseDeletes, null, []),
+      // Sin cola offline: las operaciones se confirman directamente en Sheets.
+      pendingExercises: [],
+      pendingDayNames: [],
+      pendingDeletes: [],
+      pendingExerciseDeletes: [],
 
       apiToken: localStorage.getItem(LS.apiToken) || '',
       draft: null,
@@ -1688,7 +1688,7 @@ details.history-day .btn {
 
     document.addEventListener('DOMContentLoaded', init);
     window.addEventListener('online', () => { toast('Internet recuperado'); syncData({ reason: 'online' }); renderAll(); });
-    window.addEventListener('offline', () => { toast('Sin conexión. Cola offline activa.'); renderAll(); });
+    window.addEventListener('offline', () => { toast('Sin conexión. No se pueden guardar cambios.'); renderAll(); });
     window.addEventListener('pageshow', () => scheduleAutoSync('pageshow'));
     window.addEventListener('focus', () => scheduleAutoSync('focus'));
     document.addEventListener('visibilitychange', () => {
@@ -1697,6 +1697,7 @@ details.history-day .btn {
 
     function init() {
       clearFullLocalCopies();
+      clearLocalOperationQueues();
       const startDate = localStorage.getItem(LS.globalDate) || todayISO();
       $('globalDate').value = startDate;
       $('todayText').textContent = formatDateHuman(startDate);
@@ -1772,7 +1773,7 @@ details.history-day .btn {
         localStorage.setItem(LS.setupSkipped, '1');
         closeSetupModal();
         renderAll();
-        toast('Modo local activado');
+        toast('Puedes ver la app, pero no guardar sin conectar Sheets');
       });
       $('apiTokenInput').addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter') saveApiTokenFromModal();
@@ -1805,7 +1806,7 @@ details.history-day .btn {
             openSetupModal();
             toast('Introduce la contraseña');
           } else {
-            toast('Sin conexión. Cola offline activa');
+            toast('Sin conexión. No se pueden guardar cambios')
           }
         }
         return Promise.resolve(false);
@@ -1813,7 +1814,7 @@ details.history-day .btn {
 
       if (state.syncPromise) {
         state.syncAgain = true;
-        if (manual) renderSyncStatus('Sincronización en cola…');
+        if (manual) renderSyncStatus('Actualización en curso…');
         return state.syncPromise;
       }
 
@@ -1832,10 +1833,9 @@ details.history-day .btn {
     function runSyncCycle({ manual = false, forceReload = false } = {}) {
       state.syncing = true;
       state.bootstrapping = true;
-      renderSyncStatus(manual ? 'Sincronizando datos…' : 'Actualizando datos…');
+      renderSyncStatus(manual ? 'Actualizando datos…' : 'Cargando datos…');
 
-      return commitPendingChanges()
-        .then(() => bootstrapFromServer({ silent: true }))
+      return bootstrapFromServer({ silent: true })
         .then(ok => {
           state.syncing = false;
           state.bootstrapping = false;
@@ -1847,7 +1847,6 @@ details.history-day .btn {
           console.warn(err);
           state.syncing = false;
           state.bootstrapping = false;
-          saveLocal();
           renderAll();
           if (manual) toast(err && err.message ? err.message : 'Error al actualizar datos');
           return false;
@@ -1862,20 +1861,11 @@ details.history-day .btn {
             replaceExercisesFromServer(data.exercises || {});
             replaceSyncedLogsFromServer(data.history || []);
 
-            const deletedDates = getPendingDeletedDateSet();
-            const names = { ...(data.dayNames || {}) };
-            state.pendingDayNames.forEach(item => {
-              const date = normalizeDate(item && item.date);
-              if (!date) return;
-              if (item.name) names[date] = item.name;
-              else delete names[date];
-            });
-            deletedDates.forEach(date => { delete names[date]; });
-            state.dayNames = names;
+            state.dayNames = { ...(data.dayNames || {}) };
 
             localStorage.setItem(LS.lastSyncAt, new Date().toISOString());
             saveLocal();
-            if (!silent) toast('Datos recargados de Sheets');
+            if (!silent) toast('Datos cargados de Sheets');
             return true;
           }
           throw new Error(data && data.error ? data.error : 'Respuesta inválida');
@@ -2113,6 +2103,8 @@ details.history-day .btn {
 
     function saveDraftWorkout() {
       if (!state.draft) return;
+      if (!canWriteToSheets()) return;
+
       const fecha = state.draft.fecha || $('globalDate').value || todayISO();
       const baseSerie = state.logs.filter(x => x.fecha === fecha && x.ejercicio === state.draft.exercise).length;
       const entries = [];
@@ -2137,17 +2129,33 @@ details.history-day .btn {
           rir,
           notas: String(set.notas || '').trim(),
           volumen: kg * reps,
-          createdAt: new Date(Date.now() + i).toISOString(),
-          syncStatus: 'pending'
+          createdAt: new Date(Date.now() + i).toISOString()
         });
       }
 
-      state.logs = entries.reverse().concat(state.logs);
-      saveLocal();
-      toast(`${entries.length} serie${entries.length === 1 ? '' : 's'} guardada${entries.length === 1 ? '' : 's'}`);
-      state.draft = makeDraft(state.draft.group, state.draft.exercise, fecha);
-      renderAll();
-      syncData({ reason: 'saved-workout', forceReload: true });
+      const btn = $('saveExerciseWorkoutBtn');
+      btn.disabled = true;
+      const oldText = btn.textContent;
+      btn.textContent = 'Guardando en Sheets…';
+      renderSyncStatus('Guardando…');
+
+      callApi('saveWorkout', { payload: JSON.stringify({ entries }) })
+        .then(res => {
+          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo guardar');
+          toast(`${entries.length} serie${entries.length === 1 ? '' : 's'} guardada${entries.length === 1 ? '' : 's'} en Sheets`);
+          state.draft = makeDraft(state.draft.group, state.draft.exercise, fecha);
+          return bootstrapFromServer({ silent: true });
+        })
+        .then(() => renderAll())
+        .catch(err => {
+          console.warn(err);
+          toast(err && err.message ? err.message : 'No se pudo guardar en Sheets');
+          renderSyncStatus();
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.textContent = oldText;
+        });
     }
 
     function addExercise() {
@@ -2167,21 +2175,33 @@ details.history-day .btn {
 
     function addExerciseToGroup(group, name, startNow = false) {
       if (!group || !name) { toast('Falta nombre del ejercicio'); return false; }
+      if (!canWriteToSheets()) return false;
+
       if (!state.exercises[group]) state.exercises[group] = [];
       if (state.exercises[group].some(x => norm(x) === norm(name))) {
         toast('Ese ejercicio ya existe');
         if (startNow) openExercise(state.exercises[group].find(x => norm(x) === norm(name)) || name);
         return false;
       }
-      state.exercises[group].push(name);
-      state.pendingExercises.push({ group, exercise: name, createdAt: new Date().toISOString() });
-      saveLocal();
-      renderAll();
-      toast('Ejercicio añadido');
-      syncData({ reason: 'exercise-added' });
-      if (startNow) openExercise(name);
+
+      toast('Guardando ejercicio en Sheets…');
+      callApi('saveExercise', { group, exercise: name })
+        .then(res => {
+          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo guardar el ejercicio');
+          return bootstrapFromServer({ silent: true });
+        })
+        .then(() => {
+          renderAll();
+          toast('Ejercicio añadido');
+          if (startNow) openExercise(name);
+        })
+        .catch(err => {
+          console.warn(err);
+          toast(err && err.message ? err.message : 'No se pudo guardar el ejercicio');
+        });
       return true;
     }
+
 
 
     function attachExerciseCardHandlers(btn, exercise) {
@@ -2220,171 +2240,38 @@ details.history-day .btn {
 
     function deleteExerciseFromGroup(group, exercise) {
       if (!group || !exercise) return;
+      if (!canWriteToSheets()) return;
       const used = state.logs.some(x => norm(x.grupo) === norm(group) && norm(x.ejercicio) === norm(exercise));
       const msg = used
         ? `¿Quitar "${exercise}" de ${group}? No borra el histórico ya guardado.`
         : `¿Quitar "${exercise}" de ${group}?`;
       if (!window.confirm(msg)) return;
-      state.exercises[group] = (state.exercises[group] || []).filter(x => norm(x) !== norm(exercise));
-      state.pendingExercises = state.pendingExercises.filter(x => !(norm(x.group) === norm(group) && norm(x.exercise) === norm(exercise)));
-      state.pendingExerciseDeletes.push({ group, exercise, deletedAt: new Date().toISOString() });
-      if (state.selectedExercise && norm(state.selectedExercise) === norm(exercise)) state.selectedExercise = '';
-      saveLocal();
-      renderAll();
-      toast('Ejercicio quitado');
-      syncData({ manual: true });
+
+      toast('Borrando ejercicio en Sheets…');
+      callApi('deleteExercise', { group, exercise })
+        .then(res => {
+          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo borrar el ejercicio');
+          if (state.selectedExercise && norm(state.selectedExercise) === norm(exercise)) state.selectedExercise = '';
+          return bootstrapFromServer({ silent: true });
+        })
+        .then(() => {
+          renderAll();
+          toast('Ejercicio quitado');
+        })
+        .catch(err => {
+          console.warn(err);
+          toast(err && err.message ? err.message : 'No se pudo borrar el ejercicio');
+        });
     }
 
+
     function syncPending(manual = false, options = {}) {
-      return syncData({ manual, reason: 'pending-compat', forceReload: !options.skipBootstrap });
+      return syncData({ manual, reason: 'refresh-compat', forceReload: true });
     }
 
     function commitPendingChanges() {
-      const snapshot = makePendingSnapshot();
-      if (!snapshotHasChanges(snapshot)) {
-        saveLocal();
-        renderSyncStatus();
-        return Promise.resolve({ ok: true, syncedCount: 0 });
-      }
-
-      const batches = buildSyncBatches(snapshot);
-      let chain = Promise.resolve({ ok: true, syncedCount: 0 });
-      batches.forEach(batch => {
-        chain = chain.then(total => callApi('syncBatch', { payload: JSON.stringify(batch) })
-          .then(res => {
-            if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'Error de sincronización');
-            applySyncAck(batch, res);
-            total.syncedCount += Number(res.syncedCount || 0);
-            return total;
-          })
-        );
-      });
-      return chain.then(result => {
-        saveLocal();
-        return result;
-      });
-    }
-
-    function makePendingSnapshot() {
-      const deletedDates = getPendingDeletedDateSet();
-      const pendingLogs = state.logs
-        .filter(row => String(row.syncStatus || 'synced') !== 'synced')
-        .filter(row => !deletedDates.has(normalizeDate(row.fecha)));
-
-      const latestDayNames = {};
-      state.pendingDayNames.forEach(item => {
-        const date = normalizeDate(item && item.date);
-        if (!date || deletedDates.has(date)) return;
-        latestDayNames[date] = { date, name: item.name || '', updatedAt: item.updatedAt || new Date().toISOString() };
-      });
-
-      return {
-        entries: dedupeBy(pendingLogs, row => String(row.id || '')),
-        exercises: dedupeBy(state.pendingExercises || [], item => `${norm(item.group)}|${norm(item.exercise)}`),
-        exerciseDeletes: dedupeBy(state.pendingExerciseDeletes || [], item => `${norm(item.group)}|${norm(item.exercise)}`),
-        dayNames: Object.values(latestDayNames),
-        deletedDays: Array.from(deletedDates).map(date => {
-          const item = (state.pendingDeletes || []).find(x => normalizeDate(typeof x === 'string' ? x : x.date) === date) || {};
-          return { date, deletedAt: item.deletedAt || new Date().toISOString() };
-        })
-      };
-    }
-
-    function snapshotHasChanges(snapshot) {
-      return Boolean(
-        snapshot.entries.length ||
-        snapshot.exercises.length ||
-        snapshot.exerciseDeletes.length ||
-        snapshot.dayNames.length ||
-        snapshot.deletedDays.length
-      );
-    }
-
-    function buildSyncBatches(snapshot) {
-      const batches = [];
-      const firstBase = {
-        deletedDays: snapshot.deletedDays,
-        exerciseDeletes: snapshot.exerciseDeletes,
-        dayNames: snapshot.dayNames,
-        exercises: snapshot.exercises,
-        entries: []
-      };
-
-      if (!snapshot.entries.length) return [firstBase];
-
-      let baseForNextBatch = firstBase;
-      let current = { ...baseForNextBatch, entries: [] };
-      snapshot.entries.forEach(entry => {
-        const candidate = { ...current, entries: current.entries.concat([entry]) };
-        if (estimateApiUrlLength('syncBatch', { payload: JSON.stringify(candidate) }) > MAX_JSONP_URL_LENGTH && current.entries.length) {
-          batches.push(current);
-          baseForNextBatch = { deletedDays: [], exerciseDeletes: [], dayNames: [], exercises: [], entries: [] };
-          current = { ...baseForNextBatch, entries: [entry] };
-        } else {
-          current = candidate;
-        }
-      });
-      batches.push(current);
-      return batches;
-    }
-
-    function applySyncAck(batch, res) {
-      const applied = res.applied || {};
-      const appliedDeletedDays = new Set((applied.deletedDays || batch.deletedDays.map(x => x.date)).map(normalizeDate).filter(Boolean));
-      appliedDeletedDays.forEach(date => {
-        removeLocalDay(date);
-        state.pendingDeletes = state.pendingDeletes.filter(x => normalizeDate(typeof x === 'string' ? x : x.date) !== date);
-      });
-
-      const appliedDayNames = new Set((applied.dayNames || batch.dayNames.map(x => x.date)).map(normalizeDate).filter(Boolean));
-      state.pendingDayNames = state.pendingDayNames.filter(item => !appliedDayNames.has(normalizeDate(item.date)));
-
-      (applied.exercises || batch.exercises || []).forEach(item => {
-        state.pendingExercises = state.pendingExercises.filter(x => !(norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise)));
-      });
-
-      (applied.exerciseDeletes || batch.exerciseDeletes || []).forEach(item => {
-        state.pendingExerciseDeletes = state.pendingExerciseDeletes.filter(x => !(norm(x.group) === norm(item.group) && norm(x.exercise) === norm(item.exercise)));
-      });
-
-      const syncedIds = new Set([...(res.syncedIds || []), ...(res.skippedIds || [])].map(String));
-      const skippedDeletedIds = new Set((res.skippedDeletedIds || []).map(String));
-      if (skippedDeletedIds.size) {
-        state.logs = state.logs.filter(row => !skippedDeletedIds.has(String(row.id)));
-      }
-      state.logs.forEach(row => {
-        if (syncedIds.has(String(row.id))) {
-          row.syncStatus = 'synced';
-          row.syncedAt = new Date().toISOString();
-        }
-      });
-    }
-
-    function estimateApiUrlLength(action, params = {}) {
-      try {
-        const url = new URL(API_URL);
-        url.searchParams.set('action', action);
-        url.searchParams.set('callback', 'gymCb_x');
-        url.searchParams.set('token', state.apiToken || 'x');
-        Object.entries(params).forEach(([key, value]) => {
-          if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
-        });
-        return url.toString().length;
-      } catch (e) {
-        return JSON.stringify(params || {}).length;
-      }
-    }
-
-    function dedupeBy(list, keyFn) {
-      const seen = new Set();
-      const out = [];
-      (list || []).forEach(item => {
-        const key = keyFn(item || {});
-        if (!key || seen.has(key)) return;
-        seen.add(key);
-        out.push(item);
-      });
-      return out;
+      // Compatibilidad interna: en esta versión no hay cola ni endpoint de syncBatch.
+      return Promise.resolve({ ok: true, syncedCount: 0 });
     }
 
     function callApi(action, params = {}) {
@@ -2421,7 +2308,7 @@ details.history-day .btn {
 
         if (url.toString().length > 14500) {
           cleanup();
-          reject(new Error('Hay demasiados cambios pendientes para una sola llamada. Sincroniza en tandas más pequeñas.'));
+          reject(new Error('Hay demasiadas series para una sola llamada. Guarda menos series de una vez.'));
           return;
         }
 
@@ -2452,22 +2339,21 @@ details.history-day .btn {
 
     function renderSyncStatus(customText) {
       const el = $('syncStatus');
-      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length + state.pendingDayNames.length + state.pendingDeletes.length + state.pendingExerciseDeletes.length;
       el.className = 'sync-pill';
       if (customText) {
         el.textContent = customText;
         el.classList.add('warn');
       } else if (!hasApiToken()) {
-        el.textContent = '🔐 Sin configurar';
+        el.textContent = '🔐 Configurar';
         el.classList.add('warn');
       } else if (!navigator.onLine) {
-        el.textContent = '🔴 Sin conexión';
+        el.textContent = '🔴 Sin internet';
         el.classList.add('bad');
-      } else if (pending > 0) {
-        el.textContent = `🟠 ${pending} pendiente${pending === 1 ? '' : 's'}`;
+      } else if (state.syncing) {
+        el.textContent = '🟠 Cargando…';
         el.classList.add('warn');
       } else {
-        el.textContent = '🟢 Sincronizado';
+        el.textContent = '🟢 Sheets OK';
         el.classList.add('good');
       }
     }
@@ -2475,13 +2361,11 @@ details.history-day .btn {
     function renderSettingsStatus() {
       const el = $('settingsStatus');
       if (!el) return;
-      const pending = state.logs.filter(x => x.syncStatus !== 'synced').length + state.pendingExercises.length + state.pendingDayNames.length + state.pendingDeletes.length + state.pendingExerciseDeletes.length;
       const netText = navigator.onLine ? 'Con internet' : 'Sin conexión';
       const tokenText = hasApiToken() ? 'Contraseña guardada' : 'Sin contraseña configurada';
-      const pendingText = pending ? `Cola offline: ${pending} cambio${pending === 1 ? '' : 's'}` : 'Cola offline vacía';
       const lastSync = localStorage.getItem(LS.lastSyncAt);
       const lastText = lastSync ? `Última lectura de Sheets: ${formatDateTimeShort(lastSync)}` : 'Aún sin lectura de Sheets';
-      el.innerHTML = `<strong>${netText}</strong><br>${tokenText}<br>${pendingText}<br>${lastText}<br>Sin base local de histórico.`;
+      el.innerHTML = `<strong>${netText}</strong><br>${tokenText}<br>Sin cola offline ni base local duplicada.<br>${lastText}<br>Hojas nuevas: GT_Entrenamientos_v46, GT_Ejercicios_v46 y GT_Dias_v46.`;
     }
 
     function renderGroups() {
@@ -2932,21 +2816,32 @@ details.history-day .btn {
     }
 
     function renameWorkoutDay(date) {
+      if (!canWriteToSheets()) return;
       const current = getDayName(date) === 'Entrenamiento' ? '' : getDayName(date);
       const name = window.prompt('Nombre del entrenamiento', current);
       if (name === null) return;
       const clean = String(name).trim();
-      if (clean) state.dayNames[date] = clean;
-      else delete state.dayNames[date];
-      state.pendingDayNames = state.pendingDayNames.filter(x => x.date !== date);
-      state.pendingDayNames.push({ date, name: clean, updatedAt: new Date().toISOString() });
-      saveLocal();
-      renderAll();
-      toast(clean ? 'Nombre guardado' : 'Nombre quitado');
-      syncPending();
+
+      toast('Guardando nombre en Sheets…');
+      callApi('saveDayName', { date, name: clean })
+        .then(res => {
+          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo guardar el nombre');
+          if (clean) state.dayNames[date] = clean;
+          else delete state.dayNames[date];
+          return bootstrapFromServer({ silent: true });
+        })
+        .then(() => {
+          renderAll();
+          toast(clean ? 'Nombre guardado' : 'Nombre quitado');
+        })
+        .catch(err => {
+          console.warn(err);
+          toast(err && err.message ? err.message : 'No se pudo guardar el nombre');
+        });
     }
 
     function deleteWorkoutDay(date) {
+      if (!canWriteToSheets()) return;
       date = normalizeDate(date);
       const rows = state.logs.filter(x => normalizeDate(x.fecha) === date);
       const name = getDayName(date);
@@ -2954,16 +2849,21 @@ details.history-day .btn {
       const ok = window.confirm(`¿Borrar ${rows.length} series de ${formatDateHuman(date)}${name !== 'Entrenamiento' ? ' (' + name + ')' : ''}?`);
       if (!ok) return;
 
-      removeLocalDay(date);
-      if (!state.pendingDeletes.some(x => normalizeDate(typeof x === 'string' ? x : x.date) === date)) {
-        state.pendingDeletes.push({ date, deletedAt: new Date().toISOString() });
-      }
-      saveLocal();
-      renderAll();
-      toast('Borrado pendiente de Sheets');
-      syncPending(true).then(result => {
-        if (result === false) toast('Sin confirmar en Sheets; sigue en cola offline');
-      });
+      toast('Borrando día en Sheets…');
+      callApi('deleteDay', { date })
+        .then(res => {
+          if (!res || res.ok === false) throw new Error(res && res.error ? res.error : 'No se pudo borrar el día');
+          removeLocalDay(date);
+          return bootstrapFromServer({ silent: true });
+        })
+        .then(() => {
+          renderAll();
+          toast('Día borrado de Sheets');
+        })
+        .catch(err => {
+          console.warn(err);
+          toast(err && err.message ? err.message : 'No se pudo borrar el día');
+        });
     }
 
     function removeLocalDay(date) {
@@ -3076,19 +2976,6 @@ details.history-day .btn {
         if (!next[group]) next[group] = [];
       });
 
-      // Añadir ejercicios creados localmente que aún no han subido.
-      state.pendingExercises.forEach(item => {
-        if (!item || !item.group || !item.exercise) return;
-        if (!next[item.group]) next[item.group] = [];
-        if (!next[item.group].some(x => norm(x) === norm(item.exercise))) next[item.group].push(item.exercise);
-      });
-
-      // Quitar ejercicios eliminados localmente que aún no han subido.
-      state.pendingExerciseDeletes.forEach(item => {
-        if (!item || !item.group || !item.exercise || !next[item.group]) return;
-        next[item.group] = next[item.group].filter(x => norm(x) !== norm(item.exercise));
-      });
-
       Object.keys(next).forEach(group => { next[group] = unique(next[group]).sort(alphaSort); });
       state.exercises = next;
     }
@@ -3106,47 +2993,34 @@ details.history-day .btn {
     }
 
     function replaceSyncedLogsFromServer(rows) {
-      const deletedDates = getPendingDeletedDateSet();
-
       const serverRows = (rows || [])
         .filter(row => row && row.id)
-        .map(row => ({ ...row, fecha: normalizeDate(row.fecha), syncStatus: 'synced' }))
-        .filter(row => !deletedDates.has(normalizeDate(row.fecha)));
+        .map(row => ({ ...row, fecha: normalizeDate(row.fecha), syncStatus: 'synced' }));
 
-      const serverIds = new Set(serverRows.map(row => String(row.id)));
-      const pendingLocal = state.logs.filter(row => {
-        const status = String(row.syncStatus || 'synced');
-        if (status === 'synced') return false;
-        if (deletedDates.has(normalizeDate(row.fecha))) return false;
-        if (serverIds.has(String(row.id))) return false;
-        return true;
-      });
-
-      state.logs = serverRows.concat(pendingLocal);
-      state.logs.sort((a,b) => String(b.createdAt || b.fecha).localeCompare(String(a.createdAt || a.fecha)));
+      state.logs = serverRows;
+      state.logs.sort((a,b) => String(b.createdAt || b.savedAt || b.fecha).localeCompare(String(a.createdAt || a.savedAt || a.fecha)));
     }
 
+
     function saveLocal() {
-      saveOfflineQueue();
+      clearLocalOperationQueues();
+      clearFullLocalCopies();
     }
 
     function saveOfflineQueue() {
-      try {
-        const pendingLogs = state.logs.filter(x => String(x.syncStatus || 'synced') !== 'synced');
-        localStorage.setItem(LS.pendingLogs, JSON.stringify(pendingLogs));
-        localStorage.setItem(LS.pendingExercises, JSON.stringify(state.pendingExercises || []));
-        localStorage.setItem(LS.pendingDayNames, JSON.stringify(state.pendingDayNames || []));
-        localStorage.setItem(LS.pendingDeletes, JSON.stringify(state.pendingDeletes || []));
-        localStorage.setItem(LS.pendingExerciseDeletes, JSON.stringify(state.pendingExerciseDeletes || []));
-        clearFullLocalCopies();
-      } catch (e) {
-        console.warn(e);
-      }
+      clearLocalOperationQueues();
+      clearFullLocalCopies();
     }
 
     function clearFullLocalCopies() {
       try {
         Object.values(LEGACY_LS).forEach(key => localStorage.removeItem(key));
+      } catch (e) {}
+    }
+
+    function clearLocalOperationQueues() {
+      try {
+        [LS.pendingLogs, LS.pendingExercises, LS.pendingDayNames, LS.pendingDeletes, LS.pendingExerciseDeletes].forEach(key => localStorage.removeItem(key));
       } catch (e) {}
     }
 
@@ -3160,15 +3034,9 @@ details.history-day .btn {
     }
 
     function loadPendingLogsOnly() {
-      const direct = loadJsonWithMigration(LS.pendingLogs, null, []);
-      if (direct && direct.length) return direct.map(x => ({ ...x, syncStatus: 'pending' }));
-
-      // Migración puntual desde versiones antiguas: rescatar SOLO lo no sincronizado.
-      const legacy = loadJsonWithMigration(LEGACY_LS.logs, null, []);
-      return (legacy || [])
-        .filter(x => String(x.syncStatus || 'synced') !== 'synced')
-        .map(x => ({ ...x, syncStatus: 'pending' }));
+      return [];
     }
+
 
     function hasServer() {
       return Boolean(API_URL && API_URL.includes('/exec'));
@@ -3176,6 +3044,13 @@ details.history-day .btn {
 
     function hasApiToken() {
       return Boolean(state.apiToken && state.apiToken.trim());
+    }
+
+    function canWriteToSheets() {
+      if (!hasServer()) { toast('API no configurada'); return false; }
+      if (!hasApiToken()) { openSetupModal(); toast('Introduce la contraseña'); return false; }
+      if (!navigator.onLine) { toast('Sin conexión. No se pueden guardar cambios'); return false; }
+      return true;
     }
 
     function ensureApiTokenConfigured() {
@@ -3271,21 +3146,21 @@ details.history-day .btn {
     }
 
     async function repairLocalData() {
-      const ok = window.confirm('Esto elimina cualquier copia local antigua y recarga desde Google Sheets. Mantiene solo contraseña y cola offline pendiente. ¿Continuar?');
+      const ok = window.confirm('Esto elimina copias locales antiguas y recarga desde las hojas nuevas de Google Sheets. ¿Continuar?');
       if (!ok) return;
       toast('Limpiando caché local…');
 
-      const pendingLogs = state.logs.filter(x => String(x.syncStatus || 'synced') !== 'synced');
       clearFullLocalCopies();
+      clearLocalOperationQueues();
 
-      state.logs = pendingLogs;
+      state.logs = [];
       state.exercises = clone(DEFAULT_EXERCISES);
       state.dayNames = {};
       saveLocal();
 
       renderAll();
       const loaded = await syncData({ manual: true, forceReload: true });
-      if (loaded) toast('Recargado desde Sheets');
+      if (loaded) toast('Recargado desde hojas nuevas');
       else toast('No se pudo recargar desde Sheets');
     }
 

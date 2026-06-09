@@ -1,7 +1,7 @@
 {
   "name": "GymTracker",
   "short_name": "GymTracker",
-  "description": "Registro de entrenamientos de fuerza con histórico, progreso y sincronización con Google Sheets.",
+  "description": "Registro de entrenamientos de fuerza con histórico, progreso y guardado directo en Google Sheets.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#232629",

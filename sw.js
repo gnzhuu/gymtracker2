@@ -1,66 +1,66 @@
-const CACHE_NAME = 'gym-tracker-v45-pro-sync-tombstones';
-const APP_SHELL = [
+const CACHE_NAME = 'gym-tracker-v46-clean-sheets';
+const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './icon.svg'
+  './icon.svg',
+  './icon-180.png',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(CORE_ASSETS.map(url => new Request(url, { cache: 'reload' }))))
+      .catch(() => {})
+  );
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('message', event => {
   if (!event.data) return;
-
-  if (event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-
+  if (event.data.type === 'SKIP_WAITING') self.skipWaiting();
   if (event.data.type === 'CLEAR_CACHES') {
-    event.waitUntil(
-      caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key))))
-    );
+    event.waitUntil(caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key)))));
   }
 });
 
 self.addEventListener('fetch', event => {
-  const request = event.request;
-  if (request.method !== 'GET') return;
+  const req = event.request;
+  const url = new URL(req.url);
 
-  // Para la pantalla principal usamos network-first: así GitHub Pages entrega la versión nueva
-  // cuando hay internet y solo cae a caché si estás sin cobertura.
-  if (request.mode === 'navigate') {
+  if (url.origin.includes('script.google.com') || url.pathname.includes('/macros/s/')) {
+    event.respondWith(fetch(req, { cache: 'no-store' }));
+    return;
+  }
+
+  if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then(response => {
-          const copy = response.clone();
+      fetch(req, { cache: 'no-store' })
+        .then(res => {
+          const copy = res.clone();
           caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
-          return response;
+          return res;
         })
         .catch(() => caches.match('./index.html'))
     );
     return;
   }
 
-  // Para recursos estáticos: caché primero, pero actualizando en segundo plano.
   event.respondWith(
-    caches.match(request).then(cached => {
-      const networkFetch = fetch(request).then(response => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
-        return response;
-      }).catch(() => cached);
-      return cached || networkFetch;
-    })
+    caches.match(req).then(cached => cached || fetch(req).then(res => {
+      const copy = res.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
+      return res;
+    }))
   );
 });
