@@ -1,14 +1,22 @@
-# GymTracker v43 — Fix borrado en Sheets
+# GymTracker v44 — Sin base local, solo cola offline
 
-Base: v42.
+Base: v43.
 
-Corrige el problema de Histórico:
-- El frontend ya NO da por borrado un día si Apps Script no confirma `deleteDay`.
-- Si el backend viejo no borra en Sheets, el día queda oculto localmente y el borrado queda pendiente.
-- `appscript/Code.gs` incluye `deleteDay` y responde con `deletedDate`, `deletedLogs`, `deletedDayNames`.
+Cambio principal:
+- Google Sheets es la única base de datos.
+- Se elimina la copia local de histórico/ejercicios/nombres/borrador.
+- El navegador solo guarda una cola offline mínima:
+  - series pendientes
+  - ejercicios pendientes
+  - nombres de entrenamiento pendientes
+  - borrados pendientes
+- Al recuperar conexión:
+  1. sube la cola a Apps Script/Sheets
+  2. vacía lo subido
+  3. recarga todo desde Sheets
 
 IMPORTANTE:
-Esta vez no basta con GitHub Pages. Hay que actualizar Apps Script también.
+Actualizar también Apps Script con appscript/Code.gs.
 
 GitHub Pages:
 - index.html
@@ -22,6 +30,6 @@ GitHub Pages:
 Apps Script:
 - Copiar appscript/Code.gs
 - Guardar
-- Implementar > Gestionar implementaciones > Editar la implementación actual
+- Implementar > Gestionar implementaciones > Editar implementación actual
 - Versión: Nueva versión
 - Implementar

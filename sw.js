@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gym-tracker-v43-sheet-delete-fix';
+const CACHE_NAME = 'gym-tracker-v44-no-local-db-offline-queue';
 const APP_SHELL = [
   './',
   './index.html',
